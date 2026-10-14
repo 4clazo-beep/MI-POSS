@@ -1,42 +1,22 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <!-- SDK de Firebase (Compat Version para fácil integración con JavaScript plano) -->
+ <!-- SDK de Firebase -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 
 <script>
- // Import the functions you need from the SDKs you need
+  const firebaseConfig = {
+    apiKey: "AIzaSyBE8He71lch5lgUtNm72QdFtOVI3hcbnrI",
+    authDomain: "pos-master-forromotos.firebaseapp.com",
+    projectId: "pos-master-forromotos",
+    storageBucket: "pos-master-forromotos.firebasestorage.app",
+    messagingSenderId: "102247986383",
+    appId: "1:102247986383:web:4391ac9341544b9482b3ba"
+  };
 
-import { initializeApp } from "firebase/app";
-
-// TODO: Add SDKs for Firebase products that you want to use
-
-// https://firebase.google.com/docs/web/setup#available-libraries
-
-
-// Your web app's Firebase configuration
-
-const firebaseConfig = {
-
-  apiKey: "AIzaSyBE8He71lch5lgUtNm72QdFtOVI3hcbnrI",
-
-  authDomain: "pos-master-forromotos.firebaseapp.com",
-
-  projectId: "pos-master-forromotos",
-
-  storageBucket: "pos-master-forromotos.firebasestorage.app",
-
-  messagingSenderId: "102247986383",
-
-  appId: "1:102247986383:web:4391ac9341544b9482b3ba"
-
-};
-
-
-// Initialize Firebase
-
-const app = initializeApp(firebaseConfig);
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
 </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -1571,11 +1551,45 @@ function checkLicenseOnLoad() {
             initDarkMode();
             startBackgroundSlideshow();
             checkLicenseOnLoad();
+            listenRealtimeDatabase();
             refreshAllUI();
             updateModuleInfoBanner('pos');
             updateLiveClock();
         });
+function listenRealtimeDatabase() {
+    db.collection("pos_database").doc("main_data").onSnapshot((doc) => {
+        if (doc.exists) {
+            const cloudData = doc.data();
+            
+            // Evitamos sobrescribir si la versión local es más reciente o si estamos editando activamente
+            // Actualizamos el estado global con los datos de la nube
+            state.products = cloudData.products || [];
+            state.sales = cloudData.sales || [];
+            state.clients = cloudData.clients || [];
+            state.accounts = cloudData.accounts || [];
+            state.providers = cloudData.providers || [];
+            state.payables = cloudData.payables || [];
+            state.cashRegister = cloudData.cashRegister || state.cashRegister;
+            state.cashHistory = cloudData.cashHistory || [];
 
+            // Actualizamos también el almacenamiento local del navegador
+            localStorage.setItem('pos_products', JSON.stringify(state.products));
+            localStorage.setItem('pos_sales', JSON.stringify(state.sales));
+            localStorage.setItem('pos_clients', JSON.stringify(state.clients));
+            localStorage.setItem('pos_accounts', JSON.stringify(state.accounts));
+            localStorage.setItem('pos_providers', JSON.stringify(state.providers));
+            localStorage.setItem('pos_payables', JSON.stringify(state.payables));
+            localStorage.setItem('pos_cash', JSON.stringify(state.cashRegister));
+            localStorage.setItem('pos_cash_history', JSON.stringify(state.cashHistory));
+
+            // Refrescamos la interfaz gráfica automáticamente
+            refreshAllUI();
+            console.log("Datos sincronizados en tiempo real desde Firebase.");
+        }
+    }, (error) => {
+        console.error("Error al escuchar en tiempo real:", error);
+    });
+}
         // --- BASE DE DATOS Y ESTADO GLOBAL ---
       let state = {
     products: JSON.parse(localStorage.getItem('pos_products')) || [],
@@ -1623,44 +1637,7 @@ function checkLicenseOnLoad() {
         console.error("Error al guardar en Firebase:", error);
     }
 }
-async function loadDataFromCloud() {
-    try {
-        const docRef = await db.collection("pos_database").doc("main_data").get();
-        if (docRef.exists) {
-            const cloudData = docRef.data();
-            
-            // Actualizar el estado global con los datos de la nube si existen
-            state.products = cloudData.products || state.products;
-            state.sales = cloudData.sales || state.sales;
-            state.clients = cloudData.clients || state.clients;
-            state.accounts = cloudData.accounts || state.accounts;
-            state.providers = cloudData.providers || state.providers;
-            state.payables = cloudData.payables || state.payables;
-            state.cashRegister = cloudData.cashRegister || state.cashRegister;
-            state.cashHistory = cloudData.cashHistory || state.cashHistory;
 
-            // Refrescar toda la interfaz gráfica
-            refreshAllUI();
-            console.log("Datos cargados desde Firebase Firestore correctamente.");
-        }
-    } catch (error) {
-        console.error("Error al cargar datos de Firebase, usando datos locales:", error);
-    }
-}
-
-// Ejecutar al iniciar la aplicación
-window.addEventListener('DOMContentLoaded', async () => {
-    initDarkMode();
-    startBackgroundSlideshow();
-    checkLicenseOnLoad();
-    
-    // Cargar datos de la nube antes de refrescar
-    await loadDataFromCloud();
-    
-    refreshAllUI();
-    updateModuleInfoBanner('pos');
-    updateLiveClock();
-});
 
         let tempInvoiceItems = [];
 
