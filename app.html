@@ -2477,87 +2477,90 @@ function deleteProduct(id) {
         refreshAllUI();
     }
 }
-function renderCashControl() {
-    const container = document.getElementById('cash-control-content');
-    const badgeDesk = document.getElementById('cash-status-badge-desktop');
-    const badgeMob = document.getElementById('cash-status-badge');
-    const tag = document.getElementById('cash-status-tag');
-    if (!container) return;
+// --- CONTROL DE CAJA 100% FUNCIONAL Y ROBUSTO ---
+        function renderCashControl() {
+            const container = document.getElementById('cash-control-content');
+            const badgeDesk = document.getElementById('cash-status-badge-desktop');
+            const badgeMob = document.getElementById('cash-status-badge');
+            const tag = document.getElementById('cash-status-tag');
+            if (!container) return;
 
-    const isOpened = state.cashRegister.isOpen;
+            const isOpened = state.cashRegister.isOpen;
 
-    const statusText = isOpened ? 'Caja Abierta' : 'Caja Cerrada';
-    const statusClass = isOpened ? 'px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-semibold' : 'px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-semibold';
+            const statusText = isOpened ? 'Caja Abierta' : 'Caja Cerrada';
+            const statusClass = isOpened ? 'px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-semibold' : 'px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-semibold';
 
-    if (badgeDesk) { badgeDesk.innerText = statusText; badgeDesk.className = statusClass; }
-    if (badgeMob) { badgeMob.innerText = statusText; badgeMob.className = statusClass; }
-    if (tag) { tag.innerText = statusText; tag.className = statusClass; }
+            if (badgeDesk) { badgeDesk.innerText = statusText; badgeDesk.className = statusClass; }
+            if (badgeMob) { badgeMob.innerText = statusText; badgeMob.className = statusClass; }
+            if (tag) { tag.innerText = statusText; tag.className = statusClass; }
 
-    if (!isOpened) {
-        container.innerHTML = `
-            <div class="space-y-4 max-w-md mx-auto text-center py-4">
-                <div class="w-16 h-16 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto text-2xl">
-                    <i class="fa-solid fa-lock"></i>
-                </div>
-                <h3 class="text-lg font-bold text-slate-800">Caja Actualmente Cerrada</h3>
-                <p class="text-xs text-slate-500">Ingresa el monto de dinero base con el que inicias turno.</p>
-                <div>
-                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Monto de Fondo Inicial ($)</label>
-                    <input type="number" id="cash-initial-input" placeholder="0.000" class="w-full px-4 py-2.5 border rounded-xl font-bold text-center text-slate-800 text-lg focus:outline-none focus:ring-2 focus:ring-emerald-500">
-                </div>
-                <button onclick="openCashRegister()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition shadow-lg shadow-emerald-600/20 text-sm">
-                    <i class="fa-solid fa-door-open mr-2"></i> Abrir Caja / Iniciar Turno
-                </button>
-            </div>
-        `;
-    } else {
-        const startTime = state.cashRegister.startTimeStamp || 0;
-        const currentShiftSales = state.sales.filter(s => s.id >= startTime);
-
-        const cashSales = currentShiftSales.filter(s => s.method === 'Efectivo').reduce((sum, s) => sum + s.total, 0);
-        const transfSales = currentShiftSales.filter(s => s.method === 'Transferencia').reduce((sum, s) => sum + s.total, 0);
-        const initial = state.cashRegister.initialAmount || 0;
-        const totalInBox = initial + cashSales;
-
-        container.innerHTML = `
-            <div class="space-y-6">
-                <div class="text-xs text-slate-500 font-medium border-b pb-2">
-                    <i class="fa-solid fa-clock text-emerald-600 mr-1"></i> Turno abierto el: <span class="font-bold text-slate-800">${state.cashRegister.openTime || 'Hoy'}</span>
-                </div>
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    <div class="bg-slate-50 p-3 rounded-xl border">
-                        <span class="text-[10px] font-semibold text-slate-400 uppercase">Fondo Inicial</span>
-                        <h4 class="font-bold text-slate-800 text-sm md:text-base">${formatCOP(initial)}</h4>
+            if (!isOpened) {
+                container.innerHTML = `
+                    <div class="space-y-4 max-w-md mx-auto text-center py-4">
+                        <div class="w-16 h-16 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto text-2xl">
+                            <i class="fa-solid fa-lock"></i>
+                        </div>
+                        <h3 class="text-lg font-bold text-slate-800">Caja Actualmente Cerrada</h3>
+                        <p class="text-xs text-slate-500">Ingresa el monto de dinero base con el que inicias turno.</p>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Monto de Fondo Inicial ($)</label>
+                            <input type="number" id="cash-initial-input" placeholder="0.000" class="w-full px-4 py-2.5 border rounded-xl font-bold text-center text-slate-800 text-lg focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                        </div>
+                        <button onclick="openCashRegister()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition shadow-lg shadow-emerald-600/20 text-sm">
+                            <i class="fa-solid fa-door-open mr-2"></i> Abrir Caja / Iniciar Turno
+                        </button>
                     </div>
-                    <div class="bg-slate-50 p-3 rounded-xl border">
-                        <span class="text-[10px] font-semibold text-slate-400 uppercase">Ventas Efectivo</span>
-                        <h4 class="font-bold text-emerald-600 text-sm md:text-base">${formatCOP(cashSales)}</h4>
-                    </div>
-                    <div class="bg-slate-50 p-3 rounded-xl border">
-                        <span class="text-[10px] font-semibold text-slate-400 uppercase">Ventas Transf.</span>
-                        <h4 class="font-bold text-blue-600 text-sm md:text-base">${formatCOP(transfSales)}</h4>
-                    </div>
-                    <div class="bg-emerald-50 p-3 rounded-xl border border-emerald-100">
-                        <span class="text-[10px] font-semibold text-emerald-800 uppercase">Total Esperado en Caja</span>
-                        <h4 class="font-bold text-emerald-700 text-sm md:text-base">${formatCOP(totalInBox)}</h4>
-                    </div>
-                </div>
+                `;
+            } else {
+                const startTime = state.cashRegister.startTimeStamp || 0;
+                const currentShiftSales = state.sales.filter(s => s.id >= startTime);
 
-                <div class="bg-rose-50/50 p-4 rounded-2xl border border-rose-100 space-y-3">
-                    <h4 class="text-xs font-bold uppercase text-rose-800">Cierre de Turno y Arqueo</h4>
-                    <p class="text-xs text-slate-600">Al cerrar la caja se guardará el resumen en el historial y la caja quedará lista para el siguiente turno.</p>
-                    <button onclick="closeCashRegister()" class="w-full bg-rose-600 hover:bg-rose-700 text-white font-bold py-2.5 rounded-xl transition text-xs md:text-sm shadow-md">
-                        <i class="fa-solid fa-lock mr-2"></i> Cerrar Caja y Finalizar Turno
-                    </button>
-                </div>
-            </div>
-        `;
-    }
+                const cashSales = currentShiftSales.filter(s => s.method === 'Efectivo').reduce((sum, s) => sum + s.total, 0);
+                const transfSales = currentShiftSales.filter(s => s.method === 'Transferencia').reduce((sum, s) => sum + s.total, 0);
+                const initial = state.cashRegister.initialAmount || 0;
+                const totalInBox = initial + cashSales;
 
-    renderCashHistory();
-}
+                container.innerHTML = `
+                    <div class="space-y-6">
+                        <div class="text-xs text-slate-500 font-medium border-b pb-2">
+                            <i class="fa-solid fa-clock text-emerald-600 mr-1"></i> Turno abierto el: <span class="font-bold text-slate-800">${state.cashRegister.openTime || 'Hoy'}</span>
+                        </div>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            <div class="bg-slate-50 p-3 rounded-xl border">
+                                <span class="text-[10px] font-semibold text-slate-400 uppercase">Fondo Inicial</span>
+                                <h4 class="font-bold text-slate-800 text-sm md:text-base">${formatCOP(initial)}</h4>
+                            </div>
+                            <div class="bg-slate-50 p-3 rounded-xl border">
+                                <span class="text-[10px] font-semibold text-slate-400 uppercase">Ventas Efectivo</span>
+                                <h4 class="font-bold text-emerald-600 text-sm md:text-base">${formatCOP(cashSales)}</h4>
+                            </div>
+                            <div class="bg-slate-50 p-3 rounded-xl border">
+                                <span class="text-[10px] font-semibold text-slate-400 uppercase">Ventas Transf.</span>
+                                <h4 class="font-bold text-blue-600 text-sm md:text-base">${formatCOP(transfSales)}</h4>
+                            </div>
+                            <div class="bg-emerald-50 p-3 rounded-xl border border-emerald-100">
+                                <span class="text-[10px] font-semibold text-emerald-800 uppercase">Total Esperado en Caja</span>
+                                <h4 class="font-bold text-emerald-700 text-sm md:text-base">${formatCOP(totalInBox)}</h4>
+                            </div>
+                        </div>
+
+                        <div class="bg-rose-50/50 p-4 rounded-2xl border border-rose-100 space-y-3">
+                            <h4 class="text-xs font-bold uppercase text-rose-800">Cierre de Turno y Arqueo</h4>
+                            <p class="text-xs text-slate-600">Al cerrar la caja se guardará el resumen en el historial, se exportará automáticamente a Excel y la caja quedará lista para el siguiente turno.</p>
+                            <button onclick="closeCashRegister()" class="w-full bg-rose-600 hover:bg-rose-700 text-white font-bold py-2.5 rounded-xl transition text-xs md:text-sm shadow-md">
+                                <i class="fa-solid fa-lock mr-2"></i> Cerrar Caja y Finalizar Turno
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }
+
+            renderCashHistory();
+        }
+
         function openCashRegister() {
-            const input = parseFloat(document.getElementById('cash-initial-input').value);
+            const inputElement = document.getElementById('cash-initial-input');
+            const input = inputElement ? parseFloat(inputElement.value) : 0;
             const initial = isNaN(input) ? 0 : input;
 
             state.cashRegister = {
@@ -2569,61 +2572,68 @@ function renderCashControl() {
 
             saveData();
             refreshAllUI();
+            alert('¡Caja abierta e iniciada con éxito!');
         }
 
-       function closeCashRegister() {
-    if (!confirm('¿Seguro que deseas realizar el cierre de caja?')) return;
+        function closeCashRegister() {
+            if (!confirm('¿Estás seguro de realizar el cierre de caja? Esto finalizará el turno actual.')) return;
 
-    const cashSales = state.sales.filter(s => s.method === 'Efectivo').reduce((sum, s) => sum + s.total, 0);
-    const transfSales = state.sales.filter(s => s.method === 'Transferencia').reduce((sum, s) => sum + s.total, 0);
-    const initial = state.cashRegister.initialAmount || 0;
-    const totalInBox = initial + cashSales;
+            const startTime = state.cashRegister.startTimeStamp || 0;
+            const currentShiftSales = state.sales.filter(s => s.id >= startTime);
 
-    const record = {
-        id: Date.now(),
-        openTime: state.cashRegister.openTime,
-        closeTime: new Date().toLocaleString(),
-        initialAmount: initial,
-        cashSales: cashSales,
-        transfSales: transfSales,
-        totalInBox: totalInBox
-    };
+            const cashSales = currentShiftSales.filter(s => s.method === 'Efectivo').reduce((sum, s) => sum + s.total, 0);
+            const transfSales = currentShiftSales.filter(s => s.method === 'Transferencia').reduce((sum, s) => sum + s.total, 0);
+            const initial = state.cashRegister.initialAmount || 0;
+            const totalInBox = initial + cashSales;
 
-    state.cashHistory.unshift(record);
-    state.cashRegister = { isOpen: false, initialAmount: 0, openTime: null, startTimeStamp: null };
+            const record = {
+                id: Date.now(),
+                openTime: state.cashRegister.openTime || 'N/A',
+                closeTime: new Date().toLocaleString(),
+                initialAmount: initial,
+                cashSales: cashSales,
+                transfSales: transfSales,
+                totalInBox: totalInBox
+            };
 
-    saveData();
-    
-    // DESCARGA AUTOMÁTICA DE LA BASE DE DATOS EN EXCEL AL CERRAR CAJA
-    exportToExcel();
+            if (!state.cashHistory) state.cashHistory = [];
+            state.cashHistory.unshift(record);
+            
+            // Restablecer estado de caja a cerrada
+            state.cashRegister = { isOpen: false, initialAmount: 0, openTime: null, startTimeStamp: null };
 
-    refreshAllUI();
-}
+            saveData();
+            
+            // Descarga automática del reporte de cierres a Excel
+            exportToExcel();
+
+            refreshAllUI();
+            alert('¡Cierre de caja completado con éxito y reporte exportado a Excel!');
+        }
 
         function renderCashHistory() {
             const tbody = document.getElementById('cash-history-body');
             if (!tbody) return;
             tbody.innerHTML = '';
 
-            if (state.cashHistory.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-400">Sin historial de cierres</td></tr>';
+            if (!state.cashHistory || state.cashHistory.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-400">Sin historial de cierres previos</td></tr>';
                 return;
             }
 
             state.cashHistory.forEach(c => {
                 tbody.innerHTML += `
-                    <tr>
-                        <td class="p-2.5">${c.openTime}</td>
-                        <td class="p-2.5">${c.closeTime}</td>
-                        <td class="p-2.5 font-medium">${formatCOP(c.initialAmount)}</td>
-                        <td class="p-2.5 font-medium text-emerald-600">${formatCOP(c.cashSales)}</td>
-                        <td class="p-2.5 font-medium text-blue-600">${formatCOP(c.transfSales)}</td>
-                        <td class="p-2.5 font-bold text-right text-slate-900">${formatCOP(c.totalInBox)}</td>
+                    <tr class="hover:bg-slate-50 transition">
+                        <td class="p-2.5 text-xs">${c.openTime}</td>
+                        <td class="p-2.5 text-xs">${c.closeTime}</td>
+                        <td class="p-2.5 text-xs font-medium">${formatCOP(c.initialAmount)}</td>
+                        <td class="p-2.5 text-xs font-medium text-emerald-600">${formatCOP(c.cashSales)}</td>
+                        <td class="p-2.5 text-xs font-medium text-blue-600">${formatCOP(c.transfSales)}</td>
+                        <td class="p-2.5 text-xs font-bold text-right text-slate-900">${formatCOP(c.totalInBox)}</td>
                     </tr>
                 `;
             });
         }
-
         // --- CUENTAS Y BANCOS ---
         function renderAccounts() {
             const grid = document.getElementById('accounts-cards-grid');
