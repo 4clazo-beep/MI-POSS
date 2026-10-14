@@ -2414,37 +2414,50 @@ function saveInventoryInline(productId) {
             document.getElementById('product-modal').classList.add('hidden');
         }
 
-       function saveProduct() {
+    function saveProduct() {
     if (!state.cashRegister.isOpen) return alert('La caja está cerrada. No se pueden realizar modificaciones.');
+    
     const id = document.getElementById('prod-id').value;
     const name = document.getElementById('prod-name').value.trim();
     const category = document.getElementById('prod-category').value.trim();
+    const barcode = document.getElementById('prod-barcode') ? document.getElementById('prod-barcode').value.trim() : '';
     const price = parseFloat(document.getElementById('prod-price').value);
     const stock = parseInt(document.getElementById('prod-stock').value);
 
     if (!name || isNaN(price) || isNaN(stock)) return alert('Por favor completa todos los campos requeridos.');
 
     if (id) {
+        // Editando producto existente
         const p = state.products.find(prod => prod.id === parseInt(id));
         if (p) {
             p.name = name;
             p.category = category || 'General';
+            p.barcode = barcode;
             p.price = price;
             p.stock = stock;
         }
     } else {
+        // Creando nuevo artículo
         state.products.push({
             id: Date.now(),
             name: name,
             category: category || 'General',
+            barcode: barcode,
             price: price,
             stock: stock
         });
     }
 
+    // 1. Guarda en localStorage y Firebase Cloud Firestore
     saveData();
+    
+    // 2. Cierra el modal de inventario
     closeProductModal();
+    
+    // 3. Refresca toda la interfaz para que el módulo POS y la tabla de inventario se sincronicen al instante
     refreshAllUI();
+    
+    alert('¡Artículo guardado y actualizado en el POS con éxito!');
 }
 function deleteProduct(id) {
     if (!state.cashRegister.isOpen) return alert('La caja está cerrada. No se pueden realizar modificaciones.');
