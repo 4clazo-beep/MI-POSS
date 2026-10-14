@@ -1546,9 +1546,8 @@ function checkLicenseOnLoad() {
             updateModuleInfoBanner('pos');
             updateLiveClock();
         });
-
-        // --- BASE DE DATOS Y ESTADO GLOBAL ---
-      let state = {
+// --- BASE DE DATOS Y ESTADO GLOBAL ---
+let state = {
     products: JSON.parse(localStorage.getItem('pos_products')) || [],
     cart: [],
     sales: JSON.parse(localStorage.getItem('pos_sales')) || [],
@@ -1563,24 +1562,23 @@ function checkLicenseOnLoad() {
     cashHistory: JSON.parse(localStorage.getItem('pos_cash_history')) || []
 };
 
-    // Import the functions you need from the SDKs you need
+// --- IMPORTACIONES DE FIREBASE (MODULAR SDK) ---
 import { initializeApp } from "firebase/app";
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
+import { getFirestore, doc, setDoc } from "firebase/firestore";
 
-// Your web app's Firebase configuration
+// Tu configuración de Firebase
 const firebaseConfig = {
-  apiKey: "AIzaSyBE8He71lch5lgUtNm72QdFtOVI3hcbnrI",
-  authDomain: "pos-master-forromotos.firebaseapp.com",
-  projectId: "pos-master-forromotos",
-  storageBucket: "pos-master-forromotos.firebasestorage.app",
-  messagingSenderId: "102247986383",
-  appId: "1:102247986383:web:4391ac9341544b9482b3ba"
+    apiKey: "AIzaSyBE8He71lch5lgUtNm72QdFtOVI3hcbnrI",
+    authDomain: "pos-master-forromotos.firebaseapp.com",
+    projectId: "pos-master-forromotos",
+    storageBucket: "pos-master-forromotos.firebasestorage.app",
+    messagingSenderId: "102247986383",
+    appId: "1:102247986383:web:4391ac9341544b9482b3ba"
 };
 
-// Initialize Firebase
+// Inicializar Firebase y Firestore
 const app = initializeApp(firebaseConfig);
-const db = firebase.firestore();
+const db = getFirestore(app); // <-- Corrección: Inicialización correcta para SDK Modular
 
 // --- FUNCIÓN ACTUALIZADA PARA GUARDAR EN LOCALSTORAGE Y FIREBASE ---
 async function saveData() {
@@ -1594,9 +1592,9 @@ async function saveData() {
     localStorage.setItem('pos_cash', JSON.stringify(state.cashRegister));
     localStorage.setItem('pos_cash_history', JSON.stringify(state.cashHistory));
 
-    // 2. Sincronizar de forma segura con Firebase Firestore
+    // 2. Sincronizar de forma segura con Firebase Firestore (Sintaxis Modular v9/v10+)
     try {
-        await db.collection("pos_master_database").doc("main_store").set({
+        await setDoc(doc(db, "pos_master_database", "main_store"), {
             products: state.products,
             sales: state.sales,
             clients: state.clients,
