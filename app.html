@@ -1436,7 +1436,8 @@
             const day = parseInt(match[3]);
 
             return new Date(year, month, day, 23, 59, 59);
-        }function checkLicenseOnLoad() {
+        }
+function checkLicenseOnLoad() {
     const savedLicense = localStorage.getItem('pos_license_key');
     const savedExpiry = localStorage.getItem('pos_license_expiry');
 
@@ -1453,13 +1454,15 @@
         return;
     }
 
+    // Calcular la diferencia exacta de días entre la fecha actual y la fecha de expiración
     const todayDateOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const expiryDateOnly = new Date(expiryDate.getFullYear(), expiryDate.getMonth(), expiryDate.getDate());
     const diffTime = expiryDateOnly - todayDateOnly;
     const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
 
+    // Bloquear el acceso si faltan 0 días o menos (licencia vencida)
     if (diffDays <= 0 || now > expiryDate) {
-        showLicenseScreen('⚠️ Tu licencia ha expirado (0 días restantes). Por favor renuévala.');
+        showLicenseScreen('⚠️ Tu licencia ha expirado (0 días restantes). Por favor renuévala con el administrador.');
         return;
     }
 
@@ -1475,10 +1478,6 @@
     
     const mobExpiry = document.getElementById('license-expiry-display-mob');
     if (mobExpiry) mobExpiry.innerText = `Licencia activa hasta: ${expFormatted}`;
-
-    // Al iniciar con la licencia activa, conectamos a la base de datos específica de esta licencia
-    listenRealtimeDatabaseForLicense(savedLicense);
-}
 
   if (diffDays <= 7 && diffDays > 0) {
         const warningBanner = document.getElementById('license-warning-banner');
@@ -1506,7 +1505,7 @@
             window.addEventListener('touchstart', fadeOutWarning, { once: true });
         }
     }
-
+}
         function showLicenseScreen(errorMsg = '') {
             document.getElementById('license-screen').classList.remove('hidden');
             document.getElementById('app-container').classList.add('hidden');
@@ -1519,34 +1518,26 @@
             }
         }
 
-      function activateLicense() {
-    const inputKey = document.getElementById('license-input').value.trim();
-    const expiryDate = parseLicense(inputKey);
-    const now = new Date();
+        function activateLicense() {
+            const inputKey = document.getElementById('license-input').value.trim();
+            const expiryDate = parseLicense(inputKey);
+            const now = new Date();
 
-    if (!expiryDate || isNaN(expiryDate.getTime())) {
-        showLicenseScreen('❌ Código de licencia no válido.');
-        return;
-    }
+            if (!expiryDate || isNaN(expiryDate.getTime())) {
+                showLicenseScreen('❌ Código de licencia no válido.');
+                return;
+            }
 
-    if (now > expiryDate) {
-        showLicenseScreen('⚠ La licencia que ingresaste ya ha caducado.');
-        return;
-    }
+            if (now > expiryDate) {
+                showLicenseScreen('⚠ La licencia que ingresaste ya ha caducado.');
+                return;
+            }
 
-    localStorage.setItem('pos_license_key', inputKey);
-    localStorage.setItem('pos_license_expiry', expiryDate.toISOString());
-    
-    // Al activar una nueva licencia, limpiamos los datos locales anteriores 
-    // para forzar que traiga la información correspondiente a esta nueva licencia desde la nube.
-    localStorage.removeItem('pos_products');
-    localStorage.removeItem('pos_sales');
-    localStorage.removeItem('pos_clients');
-    localStorage.removeItem('pos_payables');
-
-    alert('¡Licencia activada con éxito! Cargando datos de la licencia...');
-    checkLicenseOnLoad();
-}
+            localStorage.setItem('pos_license_key', inputKey);
+            localStorage.setItem('pos_license_expiry', expiryDate.toISOString());
+            alert('¡Licencia activada con éxito!');
+            checkLicenseOnLoad();
+        }
 
         function logoutLicense() {
             if (confirm('¿Deseas desvincular o cambiar la clave de licencia actual?')) {
@@ -1565,25 +1556,23 @@
             updateModuleInfoBanner('pos');
             updateLiveClock();
         });
-function listenRealtimeDatabaseForLicense(licenseKey) {
-    // Sanitizamos la clave para usarla como ID de documento en Firestore
-    const safeLicenseId = licenseKey.replace(/[^a-zA-Z0-9]/g, '_');
-
-    db.collection("pos_database").doc(safeLicenseId).onSnapshot((doc) => {
+function listenRealtimeDatabase() {
+    db.collection("pos_database").doc("main_data").onSnapshot((doc) => {
         if (doc.exists) {
             const cloudData = doc.data();
             
-            // Si la licencia tiene su propia base de datos en la nube, la cargamos y reemplazamos la local
+            // Evitamos sobrescribir si la versión local es más reciente o si estamos editando activamente
+            // Actualizamos el estado global con los datos de la nube
             state.products = cloudData.products || [];
             state.sales = cloudData.sales || [];
             state.clients = cloudData.clients || [];
-            state.accounts = cloudData.accounts || state.accounts;
-            state.providers = cloudData.providers || state.providers;
-            state.payables = cloudData.payables || state.payables;
+            state.accounts = cloudData.accounts || [];
+            state.providers = cloudData.providers || [];
+            state.payables = cloudData.payables || [];
             state.cashRegister = cloudData.cashRegister || state.cashRegister;
             state.cashHistory = cloudData.cashHistory || [];
 
-            // Actualizamos el almacenamiento local con los datos de esta licencia
+            // Actualizamos también el almacenamiento local del navegador
             localStorage.setItem('pos_products', JSON.stringify(state.products));
             localStorage.setItem('pos_sales', JSON.stringify(state.sales));
             localStorage.setItem('pos_clients', JSON.stringify(state.clients));
@@ -1593,13 +1582,12 @@ function listenRealtimeDatabaseForLicense(licenseKey) {
             localStorage.setItem('pos_cash', JSON.stringify(state.cashRegister));
             localStorage.setItem('pos_cash_history', JSON.stringify(state.cashHistory));
 
+            // Refrescamos la interfaz gráfica automáticamente
             refreshAllUI();
-            console.log(`Base de datos sincronizada para la licencia: ${licenseKey}`);
-        } else {
-            console.log("Esta licencia aún no tiene datos en la nube. Se inicializará al guardar.");
+            console.log("Datos sincronizados en tiempo real desde Firebase.");
         }
     }, (error) => {
-        console.error("Error al escuchar la base de datos de la licencia:", error);
+        console.error("Error al escuchar en tiempo real:", error);
     });
 }
         // --- BASE DE DATOS Y ESTADO GLOBAL ---
@@ -1621,9 +1609,6 @@ function listenRealtimeDatabaseForLicense(licenseKey) {
         saveData();
 
    async function saveData() {
-    const currentLicense = localStorage.getItem('pos_license_key') || 'default_license';
-    const safeLicenseId = currentLicense.replace(/[^a-zA-Z0-9]/g, '_');
-
     // 1. Mantener respaldo local en el navegador
     localStorage.setItem('pos_products', JSON.stringify(state.products));
     localStorage.setItem('pos_sales', JSON.stringify(state.sales));
@@ -1634,10 +1619,9 @@ function listenRealtimeDatabaseForLicense(licenseKey) {
     localStorage.setItem('pos_cash', JSON.stringify(state.cashRegister));
     localStorage.setItem('pos_cash_history', JSON.stringify(state.cashHistory));
 
-    // 2. Guardar en Firestore en el documento específico de esta licencia
+    // 2. Sincronizar con Firebase Firestore (Colección "pos_database", documento único "main_data")
     try {
-        await db.collection("pos_database").doc(safeLicenseId).set({
-            licenseKey: currentLicense,
+        await db.collection("pos_database").doc("main_data").set({
             products: state.products,
             sales: state.sales,
             clients: state.clients,
@@ -1648,7 +1632,7 @@ function listenRealtimeDatabaseForLicense(licenseKey) {
             cashHistory: state.cashHistory,
             lastUpdated: new Date().toISOString()
         });
-        console.log(`Datos guardados en la nube para la licencia: ${currentLicense}`);
+        console.log("Base de datos sincronizada en la nube con éxito.");
     } catch (error) {
         console.error("Error al guardar en Firebase:", error);
     }
@@ -2414,50 +2398,37 @@ function saveInventoryInline(productId) {
             document.getElementById('product-modal').classList.add('hidden');
         }
 
-    function saveProduct() {
+       function saveProduct() {
     if (!state.cashRegister.isOpen) return alert('La caja está cerrada. No se pueden realizar modificaciones.');
-    
     const id = document.getElementById('prod-id').value;
     const name = document.getElementById('prod-name').value.trim();
     const category = document.getElementById('prod-category').value.trim();
-    const barcode = document.getElementById('prod-barcode') ? document.getElementById('prod-barcode').value.trim() : '';
     const price = parseFloat(document.getElementById('prod-price').value);
     const stock = parseInt(document.getElementById('prod-stock').value);
 
     if (!name || isNaN(price) || isNaN(stock)) return alert('Por favor completa todos los campos requeridos.');
 
     if (id) {
-        // Editando producto existente
         const p = state.products.find(prod => prod.id === parseInt(id));
         if (p) {
             p.name = name;
             p.category = category || 'General';
-            p.barcode = barcode;
             p.price = price;
             p.stock = stock;
         }
     } else {
-        // Creando nuevo artículo
         state.products.push({
             id: Date.now(),
             name: name,
             category: category || 'General',
-            barcode: barcode,
             price: price,
             stock: stock
         });
     }
 
-    // 1. Guarda en localStorage y Firebase Cloud Firestore
     saveData();
-    
-    // 2. Cierra el modal de inventario
     closeProductModal();
-    
-    // 3. Refresca toda la interfaz para que el módulo POS y la tabla de inventario se sincronicen al instante
     refreshAllUI();
-    
-    alert('¡Artículo guardado y actualizado en el POS con éxito!');
 }
 function deleteProduct(id) {
     if (!state.cashRegister.isOpen) return alert('La caja está cerrada. No se pueden realizar modificaciones.');
@@ -2477,90 +2448,87 @@ function deleteProduct(id) {
         refreshAllUI();
     }
 }
-// --- CONTROL DE CAJA 100% FUNCIONAL Y ROBUSTO ---
-        function renderCashControl() {
-            const container = document.getElementById('cash-control-content');
-            const badgeDesk = document.getElementById('cash-status-badge-desktop');
-            const badgeMob = document.getElementById('cash-status-badge');
-            const tag = document.getElementById('cash-status-tag');
-            if (!container) return;
+function renderCashControl() {
+    const container = document.getElementById('cash-control-content');
+    const badgeDesk = document.getElementById('cash-status-badge-desktop');
+    const badgeMob = document.getElementById('cash-status-badge');
+    const tag = document.getElementById('cash-status-tag');
+    if (!container) return;
 
-            const isOpened = state.cashRegister.isOpen;
+    const isOpened = state.cashRegister.isOpen;
 
-            const statusText = isOpened ? 'Caja Abierta' : 'Caja Cerrada';
-            const statusClass = isOpened ? 'px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-semibold' : 'px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-semibold';
+    const statusText = isOpened ? 'Caja Abierta' : 'Caja Cerrada';
+    const statusClass = isOpened ? 'px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-semibold' : 'px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-semibold';
 
-            if (badgeDesk) { badgeDesk.innerText = statusText; badgeDesk.className = statusClass; }
-            if (badgeMob) { badgeMob.innerText = statusText; badgeMob.className = statusClass; }
-            if (tag) { tag.innerText = statusText; tag.className = statusClass; }
+    if (badgeDesk) { badgeDesk.innerText = statusText; badgeDesk.className = statusClass; }
+    if (badgeMob) { badgeMob.innerText = statusText; badgeMob.className = statusClass; }
+    if (tag) { tag.innerText = statusText; tag.className = statusClass; }
 
-            if (!isOpened) {
-                container.innerHTML = `
-                    <div class="space-y-4 max-w-md mx-auto text-center py-4">
-                        <div class="w-16 h-16 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto text-2xl">
-                            <i class="fa-solid fa-lock"></i>
-                        </div>
-                        <h3 class="text-lg font-bold text-slate-800">Caja Actualmente Cerrada</h3>
-                        <p class="text-xs text-slate-500">Ingresa el monto de dinero base con el que inicias turno.</p>
-                        <div>
-                            <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Monto de Fondo Inicial ($)</label>
-                            <input type="number" id="cash-initial-input" placeholder="0.000" class="w-full px-4 py-2.5 border rounded-xl font-bold text-center text-slate-800 text-lg focus:outline-none focus:ring-2 focus:ring-emerald-500">
-                        </div>
-                        <button onclick="openCashRegister()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition shadow-lg shadow-emerald-600/20 text-sm">
-                            <i class="fa-solid fa-door-open mr-2"></i> Abrir Caja / Iniciar Turno
-                        </button>
+    if (!isOpened) {
+        container.innerHTML = `
+            <div class="space-y-4 max-w-md mx-auto text-center py-4">
+                <div class="w-16 h-16 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto text-2xl">
+                    <i class="fa-solid fa-lock"></i>
+                </div>
+                <h3 class="text-lg font-bold text-slate-800">Caja Actualmente Cerrada</h3>
+                <p class="text-xs text-slate-500">Ingresa el monto de dinero base con el que inicias turno.</p>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Monto de Fondo Inicial ($)</label>
+                    <input type="number" id="cash-initial-input" placeholder="0.000" class="w-full px-4 py-2.5 border rounded-xl font-bold text-center text-slate-800 text-lg focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                </div>
+                <button onclick="openCashRegister()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition shadow-lg shadow-emerald-600/20 text-sm">
+                    <i class="fa-solid fa-door-open mr-2"></i> Abrir Caja / Iniciar Turno
+                </button>
+            </div>
+        `;
+    } else {
+        const startTime = state.cashRegister.startTimeStamp || 0;
+        const currentShiftSales = state.sales.filter(s => s.id >= startTime);
+
+        const cashSales = currentShiftSales.filter(s => s.method === 'Efectivo').reduce((sum, s) => sum + s.total, 0);
+        const transfSales = currentShiftSales.filter(s => s.method === 'Transferencia').reduce((sum, s) => sum + s.total, 0);
+        const initial = state.cashRegister.initialAmount || 0;
+        const totalInBox = initial + cashSales;
+
+        container.innerHTML = `
+            <div class="space-y-6">
+                <div class="text-xs text-slate-500 font-medium border-b pb-2">
+                    <i class="fa-solid fa-clock text-emerald-600 mr-1"></i> Turno abierto el: <span class="font-bold text-slate-800">${state.cashRegister.openTime || 'Hoy'}</span>
+                </div>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div class="bg-slate-50 p-3 rounded-xl border">
+                        <span class="text-[10px] font-semibold text-slate-400 uppercase">Fondo Inicial</span>
+                        <h4 class="font-bold text-slate-800 text-sm md:text-base">${formatCOP(initial)}</h4>
                     </div>
-                `;
-            } else {
-                const startTime = state.cashRegister.startTimeStamp || 0;
-                const currentShiftSales = state.sales.filter(s => s.id >= startTime);
-
-                const cashSales = currentShiftSales.filter(s => s.method === 'Efectivo').reduce((sum, s) => sum + s.total, 0);
-                const transfSales = currentShiftSales.filter(s => s.method === 'Transferencia').reduce((sum, s) => sum + s.total, 0);
-                const initial = state.cashRegister.initialAmount || 0;
-                const totalInBox = initial + cashSales;
-
-                container.innerHTML = `
-                    <div class="space-y-6">
-                        <div class="text-xs text-slate-500 font-medium border-b pb-2">
-                            <i class="fa-solid fa-clock text-emerald-600 mr-1"></i> Turno abierto el: <span class="font-bold text-slate-800">${state.cashRegister.openTime || 'Hoy'}</span>
-                        </div>
-                        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                            <div class="bg-slate-50 p-3 rounded-xl border">
-                                <span class="text-[10px] font-semibold text-slate-400 uppercase">Fondo Inicial</span>
-                                <h4 class="font-bold text-slate-800 text-sm md:text-base">${formatCOP(initial)}</h4>
-                            </div>
-                            <div class="bg-slate-50 p-3 rounded-xl border">
-                                <span class="text-[10px] font-semibold text-slate-400 uppercase">Ventas Efectivo</span>
-                                <h4 class="font-bold text-emerald-600 text-sm md:text-base">${formatCOP(cashSales)}</h4>
-                            </div>
-                            <div class="bg-slate-50 p-3 rounded-xl border">
-                                <span class="text-[10px] font-semibold text-slate-400 uppercase">Ventas Transf.</span>
-                                <h4 class="font-bold text-blue-600 text-sm md:text-base">${formatCOP(transfSales)}</h4>
-                            </div>
-                            <div class="bg-emerald-50 p-3 rounded-xl border border-emerald-100">
-                                <span class="text-[10px] font-semibold text-emerald-800 uppercase">Total Esperado en Caja</span>
-                                <h4 class="font-bold text-emerald-700 text-sm md:text-base">${formatCOP(totalInBox)}</h4>
-                            </div>
-                        </div>
-
-                        <div class="bg-rose-50/50 p-4 rounded-2xl border border-rose-100 space-y-3">
-                            <h4 class="text-xs font-bold uppercase text-rose-800">Cierre de Turno y Arqueo</h4>
-                            <p class="text-xs text-slate-600">Al cerrar la caja se guardará el resumen en el historial, se exportará automáticamente a Excel y la caja quedará lista para el siguiente turno.</p>
-                            <button onclick="closeCashRegister()" class="w-full bg-rose-600 hover:bg-rose-700 text-white font-bold py-2.5 rounded-xl transition text-xs md:text-sm shadow-md">
-                                <i class="fa-solid fa-lock mr-2"></i> Cerrar Caja y Finalizar Turno
-                            </button>
-                        </div>
+                    <div class="bg-slate-50 p-3 rounded-xl border">
+                        <span class="text-[10px] font-semibold text-slate-400 uppercase">Ventas Efectivo</span>
+                        <h4 class="font-bold text-emerald-600 text-sm md:text-base">${formatCOP(cashSales)}</h4>
                     </div>
-                `;
-            }
+                    <div class="bg-slate-50 p-3 rounded-xl border">
+                        <span class="text-[10px] font-semibold text-slate-400 uppercase">Ventas Transf.</span>
+                        <h4 class="font-bold text-blue-600 text-sm md:text-base">${formatCOP(transfSales)}</h4>
+                    </div>
+                    <div class="bg-emerald-50 p-3 rounded-xl border border-emerald-100">
+                        <span class="text-[10px] font-semibold text-emerald-800 uppercase">Total Esperado en Caja</span>
+                        <h4 class="font-bold text-emerald-700 text-sm md:text-base">${formatCOP(totalInBox)}</h4>
+                    </div>
+                </div>
 
-            renderCashHistory();
-        }
+                <div class="bg-rose-50/50 p-4 rounded-2xl border border-rose-100 space-y-3">
+                    <h4 class="text-xs font-bold uppercase text-rose-800">Cierre de Turno y Arqueo</h4>
+                    <p class="text-xs text-slate-600">Al cerrar la caja se guardará el resumen en el historial y la caja quedará lista para el siguiente turno.</p>
+                    <button onclick="closeCashRegister()" class="w-full bg-rose-600 hover:bg-rose-700 text-white font-bold py-2.5 rounded-xl transition text-xs md:text-sm shadow-md">
+                        <i class="fa-solid fa-lock mr-2"></i> Cerrar Caja y Finalizar Turno
+                    </button>
+                </div>
+            </div>
+        `;
+    }
 
+    renderCashHistory();
+}
         function openCashRegister() {
-            const inputElement = document.getElementById('cash-initial-input');
-            const input = inputElement ? parseFloat(inputElement.value) : 0;
+            const input = parseFloat(document.getElementById('cash-initial-input').value);
             const initial = isNaN(input) ? 0 : input;
 
             state.cashRegister = {
@@ -2572,68 +2540,61 @@ function deleteProduct(id) {
 
             saveData();
             refreshAllUI();
-            alert('¡Caja abierta e iniciada con éxito!');
         }
 
-        function closeCashRegister() {
-            if (!confirm('¿Estás seguro de realizar el cierre de caja? Esto finalizará el turno actual.')) return;
+       function closeCashRegister() {
+    if (!confirm('¿Seguro que deseas realizar el cierre de caja?')) return;
 
-            const startTime = state.cashRegister.startTimeStamp || 0;
-            const currentShiftSales = state.sales.filter(s => s.id >= startTime);
+    const cashSales = state.sales.filter(s => s.method === 'Efectivo').reduce((sum, s) => sum + s.total, 0);
+    const transfSales = state.sales.filter(s => s.method === 'Transferencia').reduce((sum, s) => sum + s.total, 0);
+    const initial = state.cashRegister.initialAmount || 0;
+    const totalInBox = initial + cashSales;
 
-            const cashSales = currentShiftSales.filter(s => s.method === 'Efectivo').reduce((sum, s) => sum + s.total, 0);
-            const transfSales = currentShiftSales.filter(s => s.method === 'Transferencia').reduce((sum, s) => sum + s.total, 0);
-            const initial = state.cashRegister.initialAmount || 0;
-            const totalInBox = initial + cashSales;
+    const record = {
+        id: Date.now(),
+        openTime: state.cashRegister.openTime,
+        closeTime: new Date().toLocaleString(),
+        initialAmount: initial,
+        cashSales: cashSales,
+        transfSales: transfSales,
+        totalInBox: totalInBox
+    };
 
-            const record = {
-                id: Date.now(),
-                openTime: state.cashRegister.openTime || 'N/A',
-                closeTime: new Date().toLocaleString(),
-                initialAmount: initial,
-                cashSales: cashSales,
-                transfSales: transfSales,
-                totalInBox: totalInBox
-            };
+    state.cashHistory.unshift(record);
+    state.cashRegister = { isOpen: false, initialAmount: 0, openTime: null, startTimeStamp: null };
 
-            if (!state.cashHistory) state.cashHistory = [];
-            state.cashHistory.unshift(record);
-            
-            // Restablecer estado de caja a cerrada
-            state.cashRegister = { isOpen: false, initialAmount: 0, openTime: null, startTimeStamp: null };
+    saveData();
+    
+    // DESCARGA AUTOMÁTICA DE LA BASE DE DATOS EN EXCEL AL CERRAR CAJA
+    exportToExcel();
 
-            saveData();
-            
-            // Descarga automática del reporte de cierres a Excel
-            exportToExcel();
-
-            refreshAllUI();
-            alert('¡Cierre de caja completado con éxito y reporte exportado a Excel!');
-        }
+    refreshAllUI();
+}
 
         function renderCashHistory() {
             const tbody = document.getElementById('cash-history-body');
             if (!tbody) return;
             tbody.innerHTML = '';
 
-            if (!state.cashHistory || state.cashHistory.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-400">Sin historial de cierres previos</td></tr>';
+            if (state.cashHistory.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-400">Sin historial de cierres</td></tr>';
                 return;
             }
 
             state.cashHistory.forEach(c => {
                 tbody.innerHTML += `
-                    <tr class="hover:bg-slate-50 transition">
-                        <td class="p-2.5 text-xs">${c.openTime}</td>
-                        <td class="p-2.5 text-xs">${c.closeTime}</td>
-                        <td class="p-2.5 text-xs font-medium">${formatCOP(c.initialAmount)}</td>
-                        <td class="p-2.5 text-xs font-medium text-emerald-600">${formatCOP(c.cashSales)}</td>
-                        <td class="p-2.5 text-xs font-medium text-blue-600">${formatCOP(c.transfSales)}</td>
-                        <td class="p-2.5 text-xs font-bold text-right text-slate-900">${formatCOP(c.totalInBox)}</td>
+                    <tr>
+                        <td class="p-2.5">${c.openTime}</td>
+                        <td class="p-2.5">${c.closeTime}</td>
+                        <td class="p-2.5 font-medium">${formatCOP(c.initialAmount)}</td>
+                        <td class="p-2.5 font-medium text-emerald-600">${formatCOP(c.cashSales)}</td>
+                        <td class="p-2.5 font-medium text-blue-600">${formatCOP(c.transfSales)}</td>
+                        <td class="p-2.5 font-bold text-right text-slate-900">${formatCOP(c.totalInBox)}</td>
                     </tr>
                 `;
             });
         }
+
         // --- CUENTAS Y BANCOS ---
         function renderAccounts() {
             const grid = document.getElementById('accounts-cards-grid');
