@@ -1436,8 +1436,7 @@
             const day = parseInt(match[3]);
 
             return new Date(year, month, day, 23, 59, 59);
-        }
-function checkLicenseOnLoad() {
+        }function checkLicenseOnLoad() {
     const savedLicense = localStorage.getItem('pos_license_key');
     const savedExpiry = localStorage.getItem('pos_license_expiry');
 
@@ -1454,15 +1453,13 @@ function checkLicenseOnLoad() {
         return;
     }
 
-    // Calcular la diferencia exacta de días entre la fecha actual y la fecha de expiración
     const todayDateOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const expiryDateOnly = new Date(expiryDate.getFullYear(), expiryDate.getMonth(), expiryDate.getDate());
     const diffTime = expiryDateOnly - todayDateOnly;
     const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
 
-    // Bloquear el acceso si faltan 0 días o menos (licencia vencida)
     if (diffDays <= 0 || now > expiryDate) {
-        showLicenseScreen('⚠️ Tu licencia ha expirado (0 días restantes). Por favor renuévala con el administrador.');
+        showLicenseScreen('⚠️ Tu licencia ha expirado (0 días restantes). Por favor renuévala.');
         return;
     }
 
@@ -1478,6 +1475,10 @@ function checkLicenseOnLoad() {
     
     const mobExpiry = document.getElementById('license-expiry-display-mob');
     if (mobExpiry) mobExpiry.innerText = `Licencia activa hasta: ${expFormatted}`;
+
+    // Al iniciar con la licencia activa, conectamos a la base de datos específica de esta licencia
+    listenRealtimeDatabaseForLicense(savedLicense);
+}
 
   if (diffDays <= 7 && diffDays > 0) {
         const warningBanner = document.getElementById('license-warning-banner');
@@ -1505,7 +1506,7 @@ function checkLicenseOnLoad() {
             window.addEventListener('touchstart', fadeOutWarning, { once: true });
         }
     }
-}
+
         function showLicenseScreen(errorMsg = '') {
             document.getElementById('license-screen').classList.remove('hidden');
             document.getElementById('app-container').classList.add('hidden');
@@ -1518,26 +1519,34 @@ function checkLicenseOnLoad() {
             }
         }
 
-        function activateLicense() {
-            const inputKey = document.getElementById('license-input').value.trim();
-            const expiryDate = parseLicense(inputKey);
-            const now = new Date();
+      function activateLicense() {
+    const inputKey = document.getElementById('license-input').value.trim();
+    const expiryDate = parseLicense(inputKey);
+    const now = new Date();
 
-            if (!expiryDate || isNaN(expiryDate.getTime())) {
-                showLicenseScreen('❌ Código de licencia no válido.');
-                return;
-            }
+    if (!expiryDate || isNaN(expiryDate.getTime())) {
+        showLicenseScreen('❌ Código de licencia no válido.');
+        return;
+    }
 
-            if (now > expiryDate) {
-                showLicenseScreen('⚠ La licencia que ingresaste ya ha caducado.');
-                return;
-            }
+    if (now > expiryDate) {
+        showLicenseScreen('⚠ La licencia que ingresaste ya ha caducado.');
+        return;
+    }
 
-            localStorage.setItem('pos_license_key', inputKey);
-            localStorage.setItem('pos_license_expiry', expiryDate.toISOString());
-            alert('¡Licencia activada con éxito!');
-            checkLicenseOnLoad();
-        }
+    localStorage.setItem('pos_license_key', inputKey);
+    localStorage.setItem('pos_license_expiry', expiryDate.toISOString());
+    
+    // Al activar una nueva licencia, limpiamos los datos locales anteriores 
+    // para forzar que traiga la información correspondiente a esta nueva licencia desde la nube.
+    localStorage.removeItem('pos_products');
+    localStorage.removeItem('pos_sales');
+    localStorage.removeItem('pos_clients');
+    localStorage.removeItem('pos_payables');
+
+    alert('¡Licencia activada con éxito! Cargando datos de la licencia...');
+    checkLicenseOnLoad();
+}
 
         function logoutLicense() {
             if (confirm('¿Deseas desvincular o cambiar la clave de licencia actual?')) {
@@ -1556,23 +1565,25 @@ function checkLicenseOnLoad() {
             updateModuleInfoBanner('pos');
             updateLiveClock();
         });
-function listenRealtimeDatabase() {
-    db.collection("pos_database").doc("main_data").onSnapshot((doc) => {
+function listenRealtimeDatabaseForLicense(licenseKey) {
+    // Sanitizamos la clave para usarla como ID de documento en Firestore
+    const safeLicenseId = licenseKey.replace(/[^a-zA-Z0-9]/g, '_');
+
+    db.collection("pos_database").doc(safeLicenseId).onSnapshot((doc) => {
         if (doc.exists) {
             const cloudData = doc.data();
             
-            // Evitamos sobrescribir si la versión local es más reciente o si estamos editando activamente
-            // Actualizamos el estado global con los datos de la nube
+            // Si la licencia tiene su propia base de datos en la nube, la cargamos y reemplazamos la local
             state.products = cloudData.products || [];
             state.sales = cloudData.sales || [];
             state.clients = cloudData.clients || [];
-            state.accounts = cloudData.accounts || [];
-            state.providers = cloudData.providers || [];
-            state.payables = cloudData.payables || [];
+            state.accounts = cloudData.accounts || state.accounts;
+            state.providers = cloudData.providers || state.providers;
+            state.payables = cloudData.payables || state.payables;
             state.cashRegister = cloudData.cashRegister || state.cashRegister;
             state.cashHistory = cloudData.cashHistory || [];
 
-            // Actualizamos también el almacenamiento local del navegador
+            // Actualizamos el almacenamiento local con los datos de esta licencia
             localStorage.setItem('pos_products', JSON.stringify(state.products));
             localStorage.setItem('pos_sales', JSON.stringify(state.sales));
             localStorage.setItem('pos_clients', JSON.stringify(state.clients));
@@ -1582,12 +1593,13 @@ function listenRealtimeDatabase() {
             localStorage.setItem('pos_cash', JSON.stringify(state.cashRegister));
             localStorage.setItem('pos_cash_history', JSON.stringify(state.cashHistory));
 
-            // Refrescamos la interfaz gráfica automáticamente
             refreshAllUI();
-            console.log("Datos sincronizados en tiempo real desde Firebase.");
+            console.log(`Base de datos sincronizada para la licencia: ${licenseKey}`);
+        } else {
+            console.log("Esta licencia aún no tiene datos en la nube. Se inicializará al guardar.");
         }
     }, (error) => {
-        console.error("Error al escuchar en tiempo real:", error);
+        console.error("Error al escuchar la base de datos de la licencia:", error);
     });
 }
         // --- BASE DE DATOS Y ESTADO GLOBAL ---
@@ -1609,6 +1621,9 @@ function listenRealtimeDatabase() {
         saveData();
 
    async function saveData() {
+    const currentLicense = localStorage.getItem('pos_license_key') || 'default_license';
+    const safeLicenseId = currentLicense.replace(/[^a-zA-Z0-9]/g, '_');
+
     // 1. Mantener respaldo local en el navegador
     localStorage.setItem('pos_products', JSON.stringify(state.products));
     localStorage.setItem('pos_sales', JSON.stringify(state.sales));
@@ -1619,9 +1634,10 @@ function listenRealtimeDatabase() {
     localStorage.setItem('pos_cash', JSON.stringify(state.cashRegister));
     localStorage.setItem('pos_cash_history', JSON.stringify(state.cashHistory));
 
-    // 2. Sincronizar con Firebase Firestore (Colección "pos_database", documento único "main_data")
+    // 2. Guardar en Firestore en el documento específico de esta licencia
     try {
-        await db.collection("pos_database").doc("main_data").set({
+        await db.collection("pos_database").doc(safeLicenseId).set({
+            licenseKey: currentLicense,
             products: state.products,
             sales: state.sales,
             clients: state.clients,
@@ -1632,7 +1648,7 @@ function listenRealtimeDatabase() {
             cashHistory: state.cashHistory,
             lastUpdated: new Date().toISOString()
         });
-        console.log("Base de datos sincronizada en la nube con éxito.");
+        console.log(`Datos guardados en la nube para la licencia: ${currentLicense}`);
     } catch (error) {
         console.error("Error al guardar en Firebase:", error);
     }
