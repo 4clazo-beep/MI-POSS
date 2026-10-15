@@ -17,6 +17,21 @@
 
   firebase.initializeApp(firebaseConfig);
   const db = firebase.firestore();
+  // --- ESTADO GLOBAL DE LA APLICACIÓN ---
+let state = {
+    products: JSON.parse(localStorage.getItem('pos_products')) || [],
+    sales: JSON.parse(localStorage.getItem('pos_sales')) || [],
+    clients: JSON.parse(localStorage.getItem('pos_clients')) || [],
+    accounts: JSON.parse(localStorage.getItem('pos_accounts')) || [
+        { id: 1, name: 'Caja General', type: 'Efectivo', balance: 0 },
+        { id: 2, name: 'Bancolombia', type: 'Banco', balance: 0 }
+    ],
+    providers: JSON.parse(localStorage.getItem('pos_providers')) || [],
+    payables: JSON.parse(localStorage.getItem('pos_payables')) || [],
+    cashRegister: JSON.parse(localStorage.getItem('pos_cash')) || { isOpen: false, initialAmount: 0, openTime: null, startTimeStamp: null },
+    cashHistory: JSON.parse(localStorage.getItem('pos_cash_history')) || [],
+    cart: []
+};
 </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
