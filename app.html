@@ -1561,8 +1561,7 @@ function listenRealtimeDatabase() {
         if (doc.exists) {
             const cloudData = doc.data();
             
-            // Evitamos sobrescribir si la versión local es más reciente o si estamos editando activamente
-            // Actualizamos el estado global con los datos de la nube
+            // Actualizamos el estado global con los datos que vienen de la nube
             state.products = cloudData.products || [];
             state.sales = cloudData.sales || [];
             state.clients = cloudData.clients || [];
@@ -1572,7 +1571,7 @@ function listenRealtimeDatabase() {
             state.cashRegister = cloudData.cashRegister || state.cashRegister;
             state.cashHistory = cloudData.cashHistory || [];
 
-            // Actualizamos también el almacenamiento local del navegador
+            // Actualizamos el almacenamiento local del dispositivo (computador o celular)
             localStorage.setItem('pos_products', JSON.stringify(state.products));
             localStorage.setItem('pos_sales', JSON.stringify(state.sales));
             localStorage.setItem('pos_clients', JSON.stringify(state.clients));
@@ -1582,9 +1581,9 @@ function listenRealtimeDatabase() {
             localStorage.setItem('pos_cash', JSON.stringify(state.cashRegister));
             localStorage.setItem('pos_cash_history', JSON.stringify(state.cashHistory));
 
-            // Refrescamos la interfaz gráfica automáticamente
+            // Refrescamos toda la interfaz gráfica al instante
             refreshAllUI();
-            console.log("Datos sincronizados en tiempo real desde Firebase.");
+            console.log("Datos sincronizados en tiempo real.");
         }
     }, (error) => {
         console.error("Error al escuchar en tiempo real:", error);
@@ -1608,8 +1607,8 @@ function listenRealtimeDatabase() {
 
         saveData();
 
-   async function saveData() {
-    // 1. Mantener respaldo local en el navegador
+ async function saveData() {
+    // 1. Respaldo local
     localStorage.setItem('pos_products', JSON.stringify(state.products));
     localStorage.setItem('pos_sales', JSON.stringify(state.sales));
     localStorage.setItem('pos_clients', JSON.stringify(state.clients));
@@ -1619,7 +1618,7 @@ function listenRealtimeDatabase() {
     localStorage.setItem('pos_cash', JSON.stringify(state.cashRegister));
     localStorage.setItem('pos_cash_history', JSON.stringify(state.cashHistory));
 
-    // 2. Sincronizar con Firebase Firestore (Colección "pos_database", documento único "main_data")
+    // 2. Enviar a Firebase Firestore para que el celular lo reciba de inmediato
     try {
         await db.collection("pos_database").doc("main_data").set({
             products: state.products,
@@ -1632,12 +1631,10 @@ function listenRealtimeDatabase() {
             cashHistory: state.cashHistory,
             lastUpdated: new Date().toISOString()
         });
-        console.log("Base de datos sincronizada en la nube con éxito.");
     } catch (error) {
         console.error("Error al guardar en Firebase:", error);
     }
 }
-
 
         let tempInvoiceItems = [];
 
