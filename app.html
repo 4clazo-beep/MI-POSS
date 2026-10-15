@@ -1921,11 +1921,11 @@ function renderBillingModule() {
         `;
     });
 }
-// Función para compartir factura desglosada artículo por artículo por WhatsApp
+// Función para compartir factura con diseño profesional por WhatsApp
 function shareInvoiceWhatsApp(code, party, total, type) {
-    let rawId, items = [], date = new Date().toLocaleDateString();
+    let items = [], date = new Date().toLocaleDateString();
 
-    // 1. Obtener el detalle de la factura según el tipo (VENTA o COMPRA)
+    // 1. Obtener la venta o compra del estado global
     if (type === 'VENTA') {
         const sale = state.sales.find(s => `FAC-V-${s.id.toString().slice(-5)}` === code || s.id.toString() === code);
         if (sale) {
@@ -1940,32 +1940,46 @@ function shareInvoiceWhatsApp(code, party, total, type) {
         }
     }
 
-    // 2. Encabezado del Mensaje
-    let msg = `=====================================\n`;
-    msg += `       *FACTURA DE ${type} - ${code}*\n`;
-    msg += `=====================================\n\n`;
-    msg += `👤 *Tercero (${type === 'VENTA' ? 'Cliente' : 'Proveedor'}):* ${party}\n`;
-    msg += `📅 *Fecha:* ${date}\n\n`;
+    const isSale = (type === 'VENTA');
+    const headerTitle = isSale ? "COMPROBANTE DE VENTA" : "COMPROBANTE DE COMPRA";
+    const labelParty = isSale ? "Cliente" : "Proveedor";
 
-    // 3. Detalle de Artículos 1 por 1
+    // 2. Encabezado Elegante y Profesional
+    let msg = `=================================\n`;
+    msg += `🧾 *${headerTitle}*\n`;
+    msg += `=================================\n\n`;
+    
+    // 3. Información del Comprobante
+    msg += `📌 *N° Factura:* \`${code}\` \n`;
+    msg += `📅 *Fecha:* ${date}\n`;
+    msg += `👤 *${labelParty}:* ${party}\n\n`;
+
+    // 4. Detalle de Artículos Estructurado
+    msg += `📋 *RESUMEN DE PRODUCTOS*\n`;
+    msg += `-------------------------------------------------\n`;
+
     if (items && items.length > 0) {
-        msg += `--- *DETALLE DE ARTÍCULOS* ---\n`;
-        items.forEach(item => {
+        items.forEach((item, index) => {
             const unitPrice = item.price !== undefined ? item.price : (item.cost || 0);
             const subtotal = item.qty * unitPrice;
-            msg += `• ${item.name}\n  └ Cant: ${item.qty} x ${formatCOP(unitPrice)} = *${formatCOP(subtotal)}*\n`;
+            
+            msg += `*${index + 1}. ${item.name}*\n`;
+            msg += `   └ *Cant:* ${item.qty}  |  *P.Unit:* ${formatCOP(unitPrice)}\n`;
+            msg += `   └ *Subtotal:* ${formatCOP(subtotal)}\n\n`;
         });
-        msg += `\n`;
+        msg += `-------------------------------------------------\n`;
     } else {
-        msg += `• _Sin artículos detallados en el registro_\n\n`;
+        msg += `_Sin artículos detallados en el registro_\n`;
+        msg += `-------------------------------------------------\n\n`;
     }
 
-    // 4. Pie de página y Total
-    msg += `💰 *MONTO TOTAL:* *${formatCOP(total)}*\n\n`;
-    msg += `=====================================\n`;
-    msg += `_Comprobante emitido desde POS Master_`;
+    // 5. Total Destacado y Pie de Página
+    msg += `💳 *TOTAL A PAGAR:* *${formatCOP(total)}*\n\n`;
+    msg += `=================================\n`;
+    msg += `✨ _¡Gracias por su confianza!_\n`;
+    msg += `🏢 *POS Master* • _Sistema de Gestión_`;
 
-    // 5. Enviar a WhatsApp
+    // 6. Enviar a WhatsApp
     const encoded = encodeURIComponent(msg);
     window.open(`https://api.whatsapp.com/send?text=${encoded}`, '_blank');
 }
