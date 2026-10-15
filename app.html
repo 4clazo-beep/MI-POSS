@@ -1921,15 +1921,51 @@ function renderBillingModule() {
         `;
     });
 }
-
-// Función auxiliar para compartir cualquier factura por WhatsApp desde el módulo
+// Función para compartir factura desglosada artículo por artículo por WhatsApp
 function shareInvoiceWhatsApp(code, party, total, type) {
-    let msg = `🧾 *FACTURA DE ${type} - ${code}*\n`;
-    msg += `👤 *Tercero:* ${party}\n`;
-    msg += `📅 *Fecha:* ${new Date().toLocaleDateString()}\n`;
-    msg += `💰 *Monto Total:* ${formatCOP(total)}\n\n`;
-    msg += `_Comprobante emitido desde el Sistema POS Master._`;
+    let rawId, items = [], date = new Date().toLocaleDateString();
 
+    // 1. Obtener el detalle de la factura según el tipo (VENTA o COMPRA)
+    if (type === 'VENTA') {
+        const sale = state.sales.find(s => `FAC-V-${s.id.toString().slice(-5)}` === code || s.id.toString() === code);
+        if (sale) {
+            items = sale.items || [];
+            date = sale.date || date;
+        }
+    } else if (type === 'COMPRA') {
+        const payable = state.payables.find(p => p.num === code || `FAC-C-${p.id.toString().slice(-5)}` === code || p.id.toString() === code);
+        if (payable) {
+            items = payable.items || [];
+            date = payable.date || date;
+        }
+    }
+
+    // 2. Encabezado del Mensaje
+    let msg = `=====================================\n`;
+    msg += `       *FACTURA DE ${type} - ${code}*\n`;
+    msg += `=====================================\n\n`;
+    msg += `👤 *Tercero (${type === 'VENTA' ? 'Cliente' : 'Proveedor'}):* ${party}\n`;
+    msg += `📅 *Fecha:* ${date}\n\n`;
+
+    // 3. Detalle de Artículos 1 por 1
+    if (items && items.length > 0) {
+        msg += `--- *DETALLE DE ARTÍCULOS* ---\n`;
+        items.forEach(item => {
+            const unitPrice = item.price !== undefined ? item.price : (item.cost || 0);
+            const subtotal = item.qty * unitPrice;
+            msg += `• ${item.name}\n  └ Cant: ${item.qty} x ${formatCOP(unitPrice)} = *${formatCOP(subtotal)}*\n`;
+        });
+        msg += `\n`;
+    } else {
+        msg += `• _Sin artículos detallados en el registro_\n\n`;
+    }
+
+    // 4. Pie de página y Total
+    msg += `💰 *MONTO TOTAL:* *${formatCOP(total)}*\n\n`;
+    msg += `=====================================\n`;
+    msg += `_Comprobante emitido desde POS Master_`;
+
+    // 5. Enviar a WhatsApp
     const encoded = encodeURIComponent(msg);
     window.open(`https://api.whatsapp.com/send?text=${encoded}`, '_blank');
 }
