@@ -4474,7 +4474,13 @@ function saveEditedBillingInvoice() {
             sale.date = date;
             sale.clientName = party;
             sale.method = method;
-            sale.total = newTotal; // Actualiza el saldo/total
+            sale.total = newTotal; // Actualiza el total de la factura
+            
+            // Si es una venta a crédito, sincronizamos también el saldo pendiente proporcional si aplica
+            if (sale.method.includes('Crédito') && sale.pendingBalance !== undefined) {
+                sale.pendingBalance = newTotal; // O ajusta según los abonos previos
+            }
+
             sale.items = tempEditBillingItems.map(i => ({
                 id: i.id,
                 name: i.name,
@@ -4482,14 +4488,14 @@ function saveEditedBillingInvoice() {
                 price: i.price
             }));
         }
-    } else if (type === 'COMPRA') {
+  } else if (type === 'COMPRA') {
         const payable = state.payables.find(p => p.id === rawId);
         if (payable) {
             payable.date = date;
             payable.providerName = party;
             payable.status = method;
-            payable.total = newTotal; // Actualiza el saldo/total de la compra
-            payable.balance = newTotal - (payable.paid || 0); // Sincroniza el saldo pendiente
+            payable.total = newTotal;
+            payable.balance = newTotal - (payable.paid || 0);
             payable.items = tempEditBillingItems.map(i => ({
                 id: i.id,
                 name: i.name,
@@ -4500,11 +4506,15 @@ function saveEditedBillingInvoice() {
         }
     }
 
-    // saveData() actualiza el almacenamiento local y dispara la sincronización con Firestore de Firebase de inmediato
+   // ⚡ PASO CLAVE: Recalcular automáticamente las deudas de los clientes con base en las facturas actualizadas
+    recalculateClientDebts();
+
+    // Guardar cambios y sincronizar en Firestore (tiempo real)
     saveData();
     closeEditBillingModal();
     refreshAllUI();
-    alert('¡Saldo de factura actualizado y sincronizado en todos tus dispositivos!');
+    
+    alert('¡Factura modificada y saldo en Clientes & Crédito actualizado automáticamente!');
 }
 // --- RELOJ EN TIEMPO REAL ---
 function updateLiveClock() {
@@ -4579,6 +4589,38 @@ function openClientWhatsAppFromCart() {
         : `https://api.whatsapp.com/send?text=${encoded}`;
 
     window.open(url, '_blank');
+}
+function recalculateClientDebts() {
+    // 1. Reiniciar la deuda acumulada de todos los clientes a 0
+    state.clients.forEach(c => c.debt = 0);
+
+    // 2. Recorrer todas las ventas registradas
+    state.sales.forEach(sale => {
+        // Verificar si la venta pertenece a un cliente y fue a crédito
+        if (sale.clientName && sale.clientName !== 'Cliente Ocasional') {
+            const isCredit = sale.method === 'Crédito' || sale.method.startsWith('Crédito') || (sale.pendingBalance !== undefined && sale.pendingBalance > 0);
+            
+            if (isCredit) {
+                // Buscar si el cliente existe en la lista
+                let client = state.clients.find(c => c.name.toLowerCase() === sale.clientName.toLowerCase());
+                
+                // Determinar el monto pendiente de esta factura específica
+                const amountToAdd = sale.pendingBalance !== undefined ? sale.pendingBalance : sale.total;
+
+                if (client) {
+                    client.debt = (client.debt || 0) + amountToAdd;
+                } else {
+                    // Si el cliente no estaba registrado formalmente pero tiene una venta a crédito, lo creamos
+                    state.clients.push({
+                        id: Date.now() + Math.random(),
+                        name: sale.clientName,
+                        phone: 'Sin Teléfono',
+                        debt: amountToAdd
+                    });
+                }
+            }
+        }
+    });
 }
  </script>
 <!-- TICKET TÉRMICO OCULTO PARA IMPRESIÓN 80MM -->
