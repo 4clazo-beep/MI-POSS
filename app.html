@@ -4402,7 +4402,7 @@ function closeEditBillingModal() {
     tempEditBillingItems = [];
 }
 
-// 7. Guardar todos los cambios realizados en la factura
+// FUNCIÓN PARA GUARDAR Y SINCRONIZAR FACTURA EDITADA AL INSTANTE
 function saveEditedBillingInvoice() {
     if (!state.cashRegister.isOpen) return alert('La caja está cerrada. No se pueden realizar modificaciones.');
 
@@ -4424,7 +4424,7 @@ function saveEditedBillingInvoice() {
             sale.date = date;
             sale.clientName = party;
             sale.method = method;
-            sale.total = newTotal;
+            sale.total = newTotal; // Actualiza el saldo/total
             sale.items = tempEditBillingItems.map(i => ({
                 id: i.id,
                 name: i.name,
@@ -4438,8 +4438,8 @@ function saveEditedBillingInvoice() {
             payable.date = date;
             payable.providerName = party;
             payable.status = method;
-            payable.total = newTotal;
-            payable.balance = newTotal - (payable.paid || 0);
+            payable.total = newTotal; // Actualiza el saldo/total de la compra
+            payable.balance = newTotal - (payable.paid || 0); // Sincroniza el saldo pendiente
             payable.items = tempEditBillingItems.map(i => ({
                 id: i.id,
                 name: i.name,
@@ -4450,10 +4450,11 @@ function saveEditedBillingInvoice() {
         }
     }
 
+    // saveData() actualiza el almacenamiento local y dispara la sincronización con Firestore de Firebase de inmediato
     saveData();
     closeEditBillingModal();
     refreshAllUI();
-    alert('Factura y artículos actualizados con éxito.');
+    alert('¡Saldo de factura actualizado y sincronizado en todos tus dispositivos!');
 }
 // --- RELOJ EN TIEMPO REAL ---
 function updateLiveClock() {
