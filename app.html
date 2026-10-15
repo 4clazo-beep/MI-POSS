@@ -1561,54 +1561,48 @@ function listenRealtimeDatabase() {
         if (doc.exists) {
             const cloudData = doc.data();
             
-            // Actualizamos el estado global con los datos que vienen de la nube
-            state.products = cloudData.products || [];
-            state.sales = cloudData.sales || [];
-            state.clients = cloudData.clients || [];
-            state.accounts = cloudData.accounts || [];
-            state.providers = cloudData.providers || [];
-            state.payables = cloudData.payables || [];
-            state.cashRegister = cloudData.cashRegister || state.cashRegister;
-            state.cashHistory = cloudData.cashHistory || [];
+            // Obtenemos la marca de tiempo de la nube y del dispositivo local
+            const cloudTime = new Date(cloudData.lastUpdated || 0).getTime();
+            const localTime = new Date(localStorage.getItem('pos_last_updated') || 0).getTime();
 
-            // Actualizamos el almacenamiento local del dispositivo (computador o celular)
-            localStorage.setItem('pos_products', JSON.stringify(state.products));
-            localStorage.setItem('pos_sales', JSON.stringify(state.sales));
-            localStorage.setItem('pos_clients', JSON.stringify(state.clients));
-            localStorage.setItem('pos_accounts', JSON.stringify(state.accounts));
-            localStorage.setItem('pos_providers', JSON.stringify(state.providers));
-            localStorage.setItem('pos_payables', JSON.stringify(state.payables));
-            localStorage.setItem('pos_cash', JSON.stringify(state.cashRegister));
-            localStorage.setItem('pos_cash_history', JSON.stringify(state.cashHistory));
+            // Sincronizar solo si la nube es más reciente, O si el local está vacío y la nube tiene datos
+            if (cloudTime >= localTime || (state.payables.length === 0 && cloudData.payables?.length > 0)) {
+                
+                state.products = cloudData.products || [];
+                state.sales = cloudData.sales || [];
+                state.clients = cloudData.clients || [];
+                state.accounts = cloudData.accounts || [];
+                state.providers = cloudData.providers || [];
+                state.payables = cloudData.payables || [];
+                state.cashRegister = cloudData.cashRegister || state.cashRegister;
+                state.cashHistory = cloudData.cashHistory || [];
 
-            // Refrescamos toda la interfaz gráfica al instante
-            refreshAllUI();
-            console.log("Datos sincronizados en tiempo real.");
+                // Guardar localmente con la marca de tiempo de la nube
+                localStorage.setItem('pos_products', JSON.stringify(state.products));
+                localStorage.setItem('pos_sales', JSON.stringify(state.sales));
+                localStorage.setItem('pos_clients', JSON.stringify(state.clients));
+                localStorage.setItem('pos_accounts', JSON.stringify(state.accounts));
+                localStorage.setItem('pos_providers', JSON.stringify(state.providers));
+                localStorage.setItem('pos_payables', JSON.stringify(state.payables));
+                localStorage.setItem('pos_cash', JSON.stringify(state.cashRegister));
+                localStorage.setItem('pos_cash_history', JSON.stringify(state.cashHistory));
+                localStorage.setItem('pos_last_updated', cloudData.lastUpdated);
+
+                refreshAllUI();
+                console.log("Datos sincronizados desde la nube de forma segura.");
+            } else {
+                console.log("Los datos locales son más recientes o iguales; se omite la sobrescritura.");
+            }
         }
     }, (error) => {
         console.error("Error al escuchar en tiempo real:", error);
     });
 }
-        // --- BASE DE DATOS Y ESTADO GLOBAL ---
-      let state = {
-    products: JSON.parse(localStorage.getItem('pos_products')) || [],
-    cart: [],
-    sales: JSON.parse(localStorage.getItem('pos_sales')) || [],
-    clients: JSON.parse(localStorage.getItem('pos_clients')) || [],
-    accounts: JSON.parse(localStorage.getItem('pos_accounts')) || [
-        { id: 1, name: 'Caja General', type: 'Efectivo', balance: 0 },
-        { id: 2, name: 'Cuenta Bancolombia', type: 'Banco', balance: 0 }
-    ],
-    providers: JSON.parse(localStorage.getItem('pos_providers')) || [],
-    payables: JSON.parse(localStorage.getItem('pos_payables')) || [],
-    cashRegister: JSON.parse(localStorage.getItem('pos_cash')) || { isOpen: false, initialAmount: 0, openTime: null, startTimeStamp: null },
-    cashHistory: JSON.parse(localStorage.getItem('pos_cash_history')) || []
-};
 
-        saveData();
-
- async function saveData() {
-    // 1. Respaldo local
+async function saveData() {
+    const timestamp = new Date().toISOString();
+    
+    // 1. Guardar localmente junto con la marca de tiempo
     localStorage.setItem('pos_products', JSON.stringify(state.products));
     localStorage.setItem('pos_sales', JSON.stringify(state.sales));
     localStorage.setItem('pos_clients', JSON.stringify(state.clients));
@@ -1617,8 +1611,9 @@ function listenRealtimeDatabase() {
     localStorage.setItem('pos_payables', JSON.stringify(state.payables));
     localStorage.setItem('pos_cash', JSON.stringify(state.cashRegister));
     localStorage.setItem('pos_cash_history', JSON.stringify(state.cashHistory));
+    localStorage.setItem('pos_last_updated', timestamp);
 
-    // 2. Enviar a Firebase Firestore para que el celular lo reciba de inmediato
+    // 2. Enviar a Firebase Firestore con la marca de tiempo exacta
     try {
         await db.collection("pos_database").doc("main_data").set({
             products: state.products,
@@ -1629,8 +1624,9 @@ function listenRealtimeDatabase() {
             payables: state.payables,
             cashRegister: state.cashRegister,
             cashHistory: state.cashHistory,
-            lastUpdated: new Date().toISOString()
+            lastUpdated: timestamp
         });
+        console.log("Datos guardados y subidos a la nube correctamente.");
     } catch (error) {
         console.error("Error al guardar en Firebase:", error);
     }
