@@ -3705,7 +3705,7 @@ function renderStatistics() {
     document.getElementById('stat-total-expenses').innerText = formatCOP(totalPayables); // <--- Tarjeta actualizada
     document.getElementById('stat-total-trans').innerText = totalTransacciones;
 
-    // ... (el resto del código de gráficos y estadísticas continúa igual)
+    // ... (el resto del código de gráficos y estadísticas continúa igual)        
 
     // Detectar si el modo oscuro está activo para estilizar los gráficos adecuadamente
     const isDarkMode = document.body.classList.contains('dark-mode');
@@ -3733,6 +3733,7 @@ function renderStatistics() {
             data: {
                 labels: labelsFin,
                 datasets: [{
+                            
                     label: 'Monto de Venta ($)',
                     data: dataFin,
                     borderColor: '#10b981',
