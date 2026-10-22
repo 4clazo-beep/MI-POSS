@@ -2832,10 +2832,15 @@ function renderCashControl() {
                 openTime: new Date().toLocaleString(),
                 startTimeStamp: Date.now()
             };
+saveData();
+    refreshAllUI();
 
-            saveData();
-            refreshAllUI();
-        }
+    // 🟢 ENVIAR REPORTE DE APERTURA POR WHATSAPP
+    sendCashReportWhatsApp('Apertura', {
+        time: openTimeString,
+        initial: initial
+    });
+}
 
        function closeCashRegister() {
     if (!confirm('¿Seguro que deseas realizar el cierre de caja?')) return;
