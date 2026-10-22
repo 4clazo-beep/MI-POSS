@@ -1988,14 +1988,16 @@ async function saveData() {
         document.getElementById('current-date').innerText = new Date().toLocaleDateString();
 
 function switchTab(tab) {
-    // 🔒 PROTECCIÓN DE MÓDULOS CON PIN 1234 (Inventarios, Facturación, Cuentas por Pagar, Clientes y Bancos & Efectivo)
-    if (tab === 'inventory' || tab === 'billing' || tab === 'clients' || tab === 'payables' || tab === 'accounts') {
+    // 🔒 PROTECCIÓN DE MÓDULOS CON PIN 1234 (Incluye Estadísticas y Reportes)
+    if (tab === 'inventory' || tab === 'billing' || tab === 'clients' || tab === 'payables' || tab === 'accounts' || tab === 'statistics' || tab === 'reports') {
         let moduleName = 'este módulo';
         if (tab === 'inventory') moduleName = 'Inventarios';
         if (tab === 'billing') moduleName = 'Facturación';
         if (tab === 'clients') moduleName = 'Clientes & Crédito';
         if (tab === 'payables') moduleName = 'Cuentas por Pagar';
         if (tab === 'accounts') moduleName = 'Bancos & Efectivo';
+        if (tab === 'statistics') moduleName = 'Estadísticas';
+        if (tab === 'reports') moduleName = 'Reportes';
 
         const pin = prompt(`Ingrese el código PIN de seguridad de 4 dígitos para acceder a ${moduleName}:`);
         if (pin === null) return; // Si cancela, no hace nada
@@ -5361,15 +5363,6 @@ function closeQuickProductModal() {
     </div>
 </div>
 
-        <!-- BOTONES DE ACCIÓN -->
-        <div class="flex justify-end gap-2 pt-2 border-t">
-            <button onclick="closeEditBillingModal()" class="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl transition text-xs font-medium">Cancelar</button>
-            <button onclick="saveEditedBillingInvoice()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition text-xs font-semibold shadow-md flex items-center gap-1.5">
-                <i class="fa-solid fa-floppy-disk"></i> Guardar Cambios
-            </button>
-        </div>
-    </div>
-</div>
 <!-- TICKET TÉRMICO OCULTO PARA IMPRESIÓN 80MM -->
 <div id="thermal-ticket" class="hidden">
     <div style="text-align: center; margin-bottom: 8px;">
