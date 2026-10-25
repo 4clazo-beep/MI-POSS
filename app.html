@@ -944,19 +944,20 @@ let state = {
             <i class="fa-solid fa-plus mr-2"></i> Nuevo Producto
         </button>
     </div>
-    <div class="bg-white rounded-2xl shadow-sm overflow-x-auto">
-        <table class="w-full text-left border-collapse min-w-[600px]">
-            <thead>
-                <tr class="bg-slate-50 border-b border-slate-100 text-slate-500 text-xs font-bold uppercase">
-                    <th class="p-3 md:p-4">Artículo</th>
-                    <th class="p-3 md:p-4">Precio de Venta ($)</th>
-                    <th class="p-3 md:p-4">Stock Disponible</th>
-                    <th class="p-3 md:p-4 text-right">Acciones</th>
-                </tr>
-            </thead>
-            <tbody id="inventory-table-body" class="divide-y divide-slate-100 text-xs md:text-sm text-slate-700"></tbody>
-        </table>
-    </div>
+   <div class="bg-white rounded-2xl shadow-sm overflow-x-auto">
+    <table class="w-full text-left border-collapse min-w-[600px]">
+        <thead>
+            <tr class="bg-slate-50 border-b border-slate-100 text-slate-500 text-xs font-bold uppercase">
+                <th class="p-3 md:p-4">Artículo</th>
+                <th class="p-3 md:p-4">Categoría</th> <!-- 👈 NUEVA COLUMNA -->
+                <th class="p-3 md:p-4">Precio de Venta ($)</th>
+                <th class="p-3 md:p-4">Stock Disponible</th>
+                <th class="p-3 md:p-4 text-right">Acciones</th>
+            </tr>
+        </thead>
+        <tbody id="inventory-table-body" class="divide-y divide-slate-100 text-xs md:text-sm text-slate-700"></tbody>
+    </table>
+</div>
 </section>
 
                 <!-- VISTA 3: CAJA Y CIERRE -->
@@ -2434,34 +2435,64 @@ function sendPaymentReceiptWhatsApp(client, amountPaid, previousDebt, remainingD
     window.open(url, '_blank');
 }
 
-        // --- POS & CARRITO ---
-        function renderPOSProducts(filter = '') {
+    function renderPOSProducts(filter = '') {
             const grid = document.getElementById('pos-product-grid');
             if (!grid) return;
             grid.innerHTML = '';
-            const filtered = state.products.filter(p => p.stock > 0 && (p.name.toLowerCase().includes(filter.toLowerCase()) || p.category.toLowerCase().includes(filter.toLowerCase())));
+            const filtered = state.products.filter(p => p.stock > 0 && (p.name.toLowerCase().includes(filter.toLowerCase()) || (p.category && p.category.toLowerCase().includes(filter.toLowerCase()))));
             
             if (filtered.length === 0) {
                 grid.innerHTML = '<div class="col-span-full text-center text-slate-400 py-8 text-xs md:text-sm font-medium">No hay productos disponibles con stock.</div>';
                 return;
             }
 
+            // Agrupar unificando variantes de nombres (mayúsculas/minúsculas/espacios)
+            const grouped = {};
+            const categoryDisplayNames = {}; // Guarda la versión bien formateada para mostrar
+
             filtered.forEach(p => {
+                const rawCat = (p.category && p.category.trim()) ? p.category.trim() : 'General';
+                // Llave normalizada en minúsculas para unificar variantes
+                const key = rawCat.toLowerCase();
+
+                if (!grouped[key]) {
+                    grouped[key] = [];
+                    categoryDisplayNames[key] = rawCat.toUpperCase(); // Nombre unificado en mayúsculas
+                }
+                grouped[key].push(p);
+            });
+
+            // Ordenar las categorías alfabéticamente
+            const sortedKeys = Object.keys(grouped).sort((a, b) => categoryDisplayNames[a].localeCompare(categoryDisplayNames[b]));
+
+            // Renderizar cada grupo unificado con su divisor de categoría
+            sortedKeys.forEach(key => {
+                const displayName = categoryDisplayNames[key];
+
                 grid.innerHTML += `
-                    <div onclick="addToCart(${p.id})" class="bg-slate-50 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 p-2.5 md:p-4 rounded-xl cursor-pointer transition flex flex-col justify-between active:scale-95">
-                        <div>
-                            <span class="text-[10px] font-semibold text-emerald-600 uppercase block">${p.category}</span>
-                            <h4 class="font-bold text-slate-800 text-xs md:text-sm mt-0.5 line-clamp-2">${p.name}</h4>
-                        </div>
-                        <div class="flex justify-between items-center mt-2 pt-1 border-t border-slate-100">
-                            <span class="font-bold text-slate-900 text-xs md:text-sm">${formatCOP(p.price)}</span>
-                            <span class="text-[10px] md:text-xs text-slate-500">Stock: ${p.stock}</span>
-                        </div>
+                    <div class="col-span-full mt-3 mb-1 first:mt-0">
+                        <h3 class="text-xs md:text-sm font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider border-b-2 border-emerald-300 dark:border-slate-700 pb-1 flex items-center gap-1.5 bg-emerald-50/60 dark:bg-slate-800/50 px-2 py-1 rounded-lg">
+                            <i class="fa-solid fa-layer-group text-xs text-emerald-600"></i> ${displayName} (${grouped[key].length})
+                        </h3>
                     </div>
                 `;
+
+                grouped[key].forEach(p => {
+                    grid.innerHTML += `
+                        <div onclick="addToCart(${p.id})" class="bg-slate-50 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 p-2.5 md:p-4 rounded-xl cursor-pointer transition flex flex-col justify-between active:scale-95">
+                            <div>
+                                <span class="text-[10px] font-semibold text-emerald-600 uppercase block">${p.category || 'General'}</span>
+                                <h4 class="font-bold text-slate-800 text-xs md:text-sm mt-0.5 line-clamp-2">${p.name}</h4>
+                            </div>
+                            <div class="flex justify-between items-center mt-2 pt-1 border-t border-slate-100">
+                                <span class="font-bold text-slate-900 text-xs md:text-sm">${formatCOP(p.price)}</span>
+                                <span class="text-[10px] md:text-xs text-slate-500">Stock: ${p.stock}</span>
+                            </div>
+                        </div>
+                    `;
+                });
             });
         }
-
         function filterPOSProducts() {
             renderPOSProducts(document.getElementById('pos-search').value);
         }
@@ -2825,7 +2856,7 @@ function renderInventory() {
     const filtered = state.products.filter(p => p.name.toLowerCase().includes(filter) || (p.category && p.category.toLowerCase().includes(filter)));
 
     if (filtered.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-slate-400">No se encontraron productos en el inventario.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-slate-400">No se encontraron productos en el inventario.</td></tr>';
         return;
     }
 
@@ -2834,7 +2865,10 @@ function renderInventory() {
             <tr class="hover:bg-slate-50 transition border-b border-slate-100">
                 <td class="p-3 md:p-4">
                     <div class="font-bold text-slate-800">${p.name}</div>
-                    <div class="text-[10px] text-slate-400 font-semibold uppercase">Cat: ${p.category || 'General'} | Cód: ${p.barcode || 'S/N'}</div>
+                    <div class="text-[10px] text-slate-400 font-semibold uppercase">Cód: ${p.barcode || 'S/N'}</div>
+                </td>
+                <td class="p-3 md:p-4">
+                    <input type="text" id="inv-category-${p.id}" value="${p.category || 'General'}" class="w-28 px-2 py-1 text-xs border rounded-lg font-semibold text-slate-800 bg-white focus:ring-2 focus:ring-emerald-500">
                 </td>
                 <td class="p-3 md:p-4">
                     <div class="flex items-center gap-1">
@@ -2862,15 +2896,16 @@ function renderInventory() {
         `;
     });
 }
-// FUNCIÓN PARA GUARDAR LOS CAMBIOS EDITADOS DESDE LA TABLA DE INVENTARIO
 function saveInventoryInline(productId) {
     if (!state.cashRegister.isOpen) return alert('La caja está cerrada. No se pueden realizar modificaciones.');
 
+    const categoryInput = document.getElementById(`inv-category-${productId}`);
     const priceInput = document.getElementById(`inv-price-${productId}`);
     const stockInput = document.getElementById(`inv-stock-${productId}`);
 
-    if (!priceInput || !stockInput) return alert('No se pudieron leer los valores del producto.');
+    if (!categoryInput || !priceInput || !stockInput) return alert('No se pudieron leer los valores del producto.');
 
+    const newCategory = categoryInput.value.trim() || 'General';
     const newPrice = parseFloat(priceInput.value);
     const newStock = parseInt(stockInput.value);
 
@@ -2880,15 +2915,16 @@ function saveInventoryInline(productId) {
     const product = state.products.find(p => p.id === productId);
     if (!product) return alert('Producto no encontrado en el inventario.');
 
-    // Actualizar los datos del producto
+    // Actualizar los datos del producto (incluyendo la nueva categoría)
+    product.category = newCategory;
     product.price = newPrice;
     product.stock = newStock;
 
-    // Guardar cambios en el almacenamiento local y actualizar la interfaz (incluyendo el POS de Venta)
+    // Guardar cambios y actualizar la interfaz (el POS agrupará el artículo en su nueva categoría de inmediato)
     saveData();
     refreshAllUI();
 
-    alert(`¡Producto "${product.name}" actualizado con éxito!\nNuevo Stock en POS: ${newStock} unidades\nNuevo Precio: ${formatCOP(newPrice)}`);
+    alert(`¡Producto "${product.name}" actualizado con éxito!\nCategoría: ${newCategory}\nStock: ${newStock}\nPrecio: ${formatCOP(newPrice)}`);
 }
         function openProductModal(id = null) {
             document.getElementById('product-modal').classList.remove('hidden');
