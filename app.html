@@ -636,6 +636,9 @@ let state = {
                 <button onclick="switchTab('inventory')" id="btn-inventory" class="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-800 transition">
                     <i class="fa-solid fa-boxes-stacked w-5"></i> Inventario
                 </button>
+                <button onclick="switchTab('bodega')" id="btn-bodega" class="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-800 transition">
+    <i class="fa-solid fa-warehouse w-5"></i> Bodega
+</button>
                 <button onclick="switchTab('cash')" id="btn-cash" class="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-800 transition">
                     <i class="fa-solid fa-vault w-5"></i> Caja / Cierre
                 </button>
@@ -720,6 +723,9 @@ let state = {
                     </button>
                     <button onclick="switchTab('billing'); toggleMobileMoreMenu();" id="mob-btn-billing" class="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100 text-slate-700 font-medium text-xs active:bg-emerald-50">
     <i class="fa-solid fa-file-invoice-dollar text-emerald-600 text-base"></i> Facturación
+</button>
+<button onclick="switchTab('bodega'); toggleMobileMoreMenu();" id="mob-btn-bodega" class="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100 text-slate-700 font-medium text-xs active:bg-emerald-50">
+    <i class="fa-solid fa-warehouse text-amber-600 text-base"></i> Bodega
 </button>
                     <button onclick="switchTab('payables'); toggleMobileMoreMenu();" id="mob-btn-payables" class="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100 text-slate-700 font-medium text-xs active:bg-emerald-50">
                         <i class="fa-solid fa-file-invoice-dollar text-emerald-600 text-base"></i> Cuentas x Pagar
@@ -807,7 +813,7 @@ let state = {
             </div>
         </div>
     </div>
-
+  
     <!-- TABLA DE FACTURAS -->
     <div class="bg-white rounded-2xl shadow-sm overflow-x-auto border border-slate-100">
         <table class="w-full text-left border-collapse min-w-[700px]">
@@ -825,6 +831,60 @@ let state = {
         </table>
     </div>
 </section>
+  <!-- VISTA BODEGA -->
+<section id="view-bodega" class="hidden space-y-4 md:space-y-6">
+    <div class="bg-white rounded-2xl shadow-sm p-4 md:p-6 flex flex-col md:flex-row justify-between items-center gap-3">
+        <input type="text" id="bodega-search" oninput="renderBodega()" placeholder="Buscar artículos en bodega..." class="w-full md:w-80 px-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-500">
+        <button onclick="openBodegaModal()" class="w-full md:w-auto bg-amber-600 hover:bg-amber-700 text-white font-semibold px-5 py-2.5 rounded-xl transition shadow-lg shadow-amber-600/20 text-xs md:text-sm">
+            <i class="fa-solid fa-plus mr-2"></i> Nuevo Artículo en Bodega
+        </button>
+    </div>
+    <div class="bg-white rounded-2xl shadow-sm overflow-x-auto">
+        <table class="w-full text-left border-collapse min-w-[600px]">
+            <thead>
+                <tr class="bg-slate-50 border-b border-slate-100 text-slate-500 text-xs font-bold uppercase">
+                    <th class="p-3 md:p-4">Artículo</th>
+                    <th class="p-3 md:p-4">Categoría</th>
+                    <th class="p-3 md:p-4 text-center text-amber-600">Stock Bodega (Amarillo)</th>
+                    <th class="p-3 md:p-4 text-center text-emerald-600">Stock Almacén (Verde)</th>
+                    <th class="p-3 md:p-4 text-right">Acciones / Traslado</th>
+                </tr>
+            </thead>
+            <tbody id="bodega-table-body" class="divide-y divide-slate-100 text-xs md:text-sm text-slate-700"></tbody>
+        </table>
+    </div>
+</section>
+
+<!-- MODAL GESTIÓN BODEGA -->
+<div id="bodega-modal" class="fixed inset-0 bg-slate-900/50 hidden flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6 space-y-4">
+        <h3 id="modal-bodega-title" class="text-lg font-bold text-slate-800">Artículo en Bodega</h3>
+        <input type="hidden" id="bodega-prod-id">
+        <div>
+            <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Nombre del Artículo</label>
+            <input type="text" id="bodega-prod-name" class="w-full px-4 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm">
+        </div>
+        <div>
+            <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Categoría</label>
+            <input type="text" id="bodega-prod-category" class="w-full px-4 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm">
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Precio Venta ($)</label>
+                <input type="number" id="bodega-prod-price" class="w-full px-4 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm">
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Stock Bodega</label>
+                <input type="number" id="bodega-prod-stock-bodega" class="w-full px-4 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm">
+            </div>
+        </div>
+        <div class="flex justify-end gap-2 pt-2">
+            <button onclick="closeBodegaModal()" class="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl transition text-xs font-medium">Cancelar</button>
+            <button onclick="saveBodegaProduct()" class="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl transition text-xs font-semibold">Guardar</button>
+        </div>
+    </div>
+</div>
+
 
                 <!-- VISTA 1: POS (VENTAS) -->
                 <section id="view-pos" class="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6 h-full">
@@ -1165,7 +1225,7 @@ let state = {
             <h3 id="stat-total-trans" class="text-base md:text-xl font-bold text-slate-800 mt-1">0</h3>
         </div>
     </div>
-    <!-- PANEL ANALÍTICO DE PRODUCTOS (MÓDULO POS Y VENTAS) -->
+   <!-- PANEL ANALÍTICO DE PRODUCTOS (MÓDULO POS Y VENTAS) -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 mt-6">
         <!-- Panel: Productos Más Frecuentes -->
         <div class="bg-white rounded-2xl shadow-sm p-4 md:p-6 border border-slate-100 flex flex-col">
@@ -1664,6 +1724,144 @@ let state = {
     if (iconMob) {
         iconMob.className = isDark ? 'fa-solid fa-moon relative z-10' : 'fa-solid fa-sun relative z-10';
     }
+  // ==========================================
+// MÓDULO BODEGA: 100% FUNCIONAL Y UNIFICADO
+// ==========================================
+
+function initBodegaProducts() {
+    if (!state.products) state.products = [];
+    state.products.forEach(p => {
+        if (p.stockBodega === undefined) p.stockBodega = 0;
+        if (p.stockAlmacen === undefined) p.stockAlmacen = p.stock || 0;
+        p.stock = p.stockAlmacen;
+    });
+}
+
+function renderBodega() {
+    initBodegaProducts();
+    const tbody = document.getElementById('bodega-table-body');
+    if (!tbody) return;
+    
+    const filter = (document.getElementById('bodega-search')?.value || '').toLowerCase();
+    tbody.innerHTML = '';
+
+    const filtered = state.products.filter(p => 
+        (p.name && p.name.toLowerCase().includes(filter)) || 
+        (p.category && p.category.toLowerCase().includes(filter))
+    );
+
+    if (filtered.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-slate-400 font-medium">No se encontraron artículos en bodega.</td></tr>';
+        return;
+    }
+
+    filtered.forEach(p => {
+        tbody.innerHTML += `
+            <tr class="hover:bg-slate-50 transition border-b border-slate-100">
+                <td class="p-3 md:p-4 font-bold text-slate-800">${p.name}</td>
+                <td class="p-3 md:p-4 text-slate-500">${p.category || 'General'}</td>
+                <td class="p-3 md:p-4 text-center font-bold text-amber-600 bg-amber-50/50 rounded-lg">${p.stockBodega || 0}</td>
+                <td class="p-3 md:p-4 text-center font-bold text-emerald-600 bg-emerald-50/50 rounded-lg">${p.stockAlmacen || 0}</td>
+                <td class="p-3 md:p-4 text-right space-x-1">
+                    <button onclick="transferStockToAlmacen(${p.id})" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition shadow-sm" title="Trasladar a Almacén">
+                        <i class="fa-solid fa-right-left mr-1"></i> Trasladar
+                    </button>
+                    <button onclick="openBodegaModal(${p.id})" class="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs" title="Editar">
+                        <i class="fa-solid fa-pen"></i>
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+}
+
+function openBodegaModal(id = null) {
+    document.getElementById('bodega-modal').classList.remove('hidden');
+    if (id) {
+        const p = state.products.find(prod => prod.id === id);
+        if (!p) return;
+        document.getElementById('modal-bodega-title').innerText = 'Editar Artículo en Bodega';
+        document.getElementById('bodega-prod-id').value = p.id;
+        document.getElementById('bodega-prod-name').value = p.name;
+        document.getElementById('bodega-prod-category').value = p.category || '';
+        document.getElementById('bodega-prod-price').value = p.price || 0;
+        document.getElementById('bodega-prod-stock-bodega').value = p.stockBodega || 0;
+    } else {
+        document.getElementById('modal-bodega-title').innerText = 'Nuevo Artículo en Bodega';
+        document.getElementById('bodega-prod-id').value = '';
+        document.getElementById('bodega-prod-name').value = '';
+        document.getElementById('bodega-prod-category').value = '';
+        document.getElementById('bodega-prod-price').value = '';
+        document.getElementById('bodega-prod-stock-bodega').value = '';
+    }
+}
+
+function closeBodegaModal() {
+    document.getElementById('bodega-modal').classList.add('hidden');
+}
+
+function saveBodegaProduct() {
+    if (!state.cashRegister.isOpen) return alert('La caja está cerrada. Debes abrir la caja para registrar o modificar mercancía.');
+    
+    const id = document.getElementById('bodega-prod-id').value;
+    const name = document.getElementById('bodega-prod-name').value.trim();
+    const category = document.getElementById('bodega-prod-category').value.trim();
+    const price = parseFloat(document.getElementById('bodega-prod-price').value);
+    const stockBodega = parseInt(document.getElementById('bodega-prod-stock-bodega').value);
+
+    if (!name || isNaN(price) || isNaN(stockBodega) || price < 0 || stockBodega < 0) {
+        return alert('Por favor completa todos los campos correctamente con valores válidos.');
+    }
+
+    if (id) {
+        const p = state.products.find(prod => prod.id === parseInt(id));
+        if (p) {
+            p.name = name;
+            p.category = category || 'General';
+            p.price = price;
+            p.stockBodega = stockBodega;
+        }
+    } else {
+        state.products.push({
+            id: Date.now(),
+            name: name,
+            category: category || 'General',
+            price: price,
+            stockBodega: stockBodega,
+            stockAlmacen: 0,
+            stock: 0,
+            barcode: ''
+        });
+    }
+
+    saveData();
+    closeBodegaModal();
+    refreshAllUI();
+}
+
+function transferStockToAlmacen(productId) {
+    if (!state.cashRegister.isOpen) return alert('La caja está cerrada.');
+    const product = state.products.find(p => p.id === productId);
+    if (!product) return;
+
+    const currentBodega = product.stockBodega || 0;
+    if (currentBodega <= 0) return alert('No hay unidades disponibles en bodega para trasladar.');
+
+    const qtyStr = prompt(`¿Cuántas unidades deseas trasladar de Bodega a Almacén para "${product.name}"?\n\nStock actual en Bodega: ${currentBodega}\nStock actual en Almacén: ${product.stockAlmacen || 0}`);
+    if (qtyStr === null) return;
+    const qty = parseInt(qtyStr);
+
+    if (isNaN(qty) || qty <= 0) return alert('Ingresa una cantidad válida mayor a 0.');
+    if (qty > currentBodega) return alert(`No puedes trasladar ${qty} unidades. Solo hay ${currentBodega} en bodega.`);
+
+    product.stockBodega = currentBodega - qty;
+    product.stockAlmacen = (product.stockAlmacen || 0) + qty;
+    product.stock = product.stockAlmacen;
+
+    saveData();
+    refreshAllUI();
+    alert(`¡Traslado exitoso!\n\nSe movieron ${qty} unidades de "${product.name}" al Almacén de ventas.`);
+}
 
     // Actualizar partículas dinámicas (Estrellas para Luna, Nubes para Sol)
     const desktopParticles = document.querySelectorAll('.mode-particle');
@@ -1688,6 +1886,7 @@ let state = {
         }
     });
 }
+
 
         // --- SISTEMA DE IMÁGENES DE FONDO ---
         const backgroundImages = Array.from({ length: 100 }, (_, i) => `https://picsum.photos/1920/1080?random=${i + 1}`);
@@ -1879,7 +2078,127 @@ function checkLicenseOnLoad() {
                 errEl.classList.add('hidden');
             }
         }
+// Actualizar información del módulo en el banner superior
+modulesInfo.bodega = {
+    title: "Módulo de Bodega",
+    icon: "fa-warehouse",
+    desc: "Gestiona el inventario central en bodega y realiza traslados de mercancía hacia el almacén de ventas."
+};
 
+// Renderizar tabla del módulo Bodega
+function renderBodega() {
+    const tbody = document.getElementById('bodega-table-body');
+    if (!tbody) return;
+    const filter = (document.getElementById('bodega-search')?.value || '').toLowerCase();
+    tbody.innerHTML = '';
+
+    const filtered = state.products.filter(p => p.name.toLowerCase().includes(filter) || (p.category && p.category.toLowerCase().includes(filter)));
+
+    if (filtered.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-slate-400">No se encontraron artículos en bodega.</td></tr>';
+        return;
+    }
+
+    filtered.forEach(p => {
+        tbody.innerHTML += `
+            <tr class="hover:bg-slate-50 transition border-b border-slate-100">
+                <td class="p-3 md:p-4 font-bold text-slate-800">${p.name}</td>
+                <td class="p-3 md:p-4 text-slate-500">${p.category || 'General'}</td>
+                <td class="p-3 md:p-4 text-center font-bold text-amber-600 bg-amber-50/50">${p.stockBodega || 0}</td>
+                <td class="p-3 md:p-4 text-center font-bold text-emerald-600 bg-emerald-50/50">${p.stockAlmacen || 0}</td>
+                <td class="p-3 md:p-4 text-right space-x-1">
+                    <button onclick="transferStockToAlmacen(${p.id})" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition shadow-sm" title="Trasladar a Almacén">
+                        <i class="fa-solid fa-right-left mr-1"></i> Trasladar
+                    </button>
+                    <button onclick="openBodegaModal(${p.id})" class="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs" title="Editar">
+                        <i class="fa-solid fa-pen"></i>
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+}
+
+function openBodegaModal(id = null) {
+    document.getElementById('bodega-modal').classList.remove('hidden');
+    if (id) {
+        const p = state.products.find(prod => prod.id === id);
+        document.getElementById('modal-bodega-title').innerText = 'Editar Artículo en Bodega';
+        document.getElementById('bodega-prod-id').value = p.id;
+        document.getElementById('bodega-prod-name').value = p.name;
+        document.getElementById('bodega-prod-category').value = p.category || '';
+        document.getElementById('bodega-prod-price').value = p.price;
+        document.getElementById('bodega-prod-stock-bodega').value = p.stockBodega || 0;
+    } else {
+        document.getElementById('modal-bodega-title').innerText = 'Nuevo Artículo en Bodega';
+        document.getElementById('bodega-prod-id').value = '';
+        document.getElementById('bodega-prod-name').value = '';
+        document.getElementById('bodega-prod-category').value = '';
+        document.getElementById('bodega-prod-price').value = '';
+        document.getElementById('bodega-prod-stock-bodega').value = '';
+    }
+}
+
+function closeBodegaModal() {
+    document.getElementById('bodega-modal').classList.add('hidden');
+}
+
+function saveBodegaProduct() {
+    if (!state.cashRegister.isOpen) return alert('La caja está cerrada.');
+    const id = document.getElementById('bodega-prod-id').value;
+    const name = document.getElementById('bodega-prod-name').value.trim();
+    const category = document.getElementById('bodega-prod-category').value.trim();
+    const price = parseFloat(document.getElementById('bodega-prod-price').value);
+    const stockBodega = parseInt(document.getElementById('bodega-prod-stock-bodega').value);
+
+    if (!name || isNaN(price) || isNaN(stockBodega)) return alert('Completa todos los campos correctamente.');
+
+    if (id) {
+        const p = state.products.find(prod => prod.id === parseInt(id));
+        if (p) {
+            p.name = name;
+            p.category = category || 'General';
+            p.price = price;
+            p.stockBodega = stockBodega;
+            p.stock = (p.stockBodega || 0) + (p.stockAlmacen || 0);
+        }
+    } else {
+        state.products.push({
+            id: Date.now(),
+            name: name,
+            category: category || 'General',
+            price: price,
+            stockBodega: stockBodega,
+            stockAlmacen: 0,
+            stock: stockBodega
+        });
+    }
+
+    saveData();
+    closeBodegaModal();
+    refreshAllUI();
+}
+
+function transferStockToAlmacen(productId) {
+    if (!state.cashRegister.isOpen) return alert('La caja está cerrada.');
+    const product = state.products.find(p => p.id === productId);
+    if (!product) return;
+
+    const qtyStr = prompt(`¿Cuántas unidades deseas trasladar de Bodega a Almacén para "${product.name}"?\nStock actual en Bodega: ${product.stockBodega || 0}`);
+    if (qtyStr === null) return;
+    const qty = parseInt(qtyStr);
+
+    if (isNaN(qty) || qty <= 0) return alert('Cantidad inválida.');
+    if (qty > (product.stockBodega || 0)) return alert('No hay suficiente stock en bodega.');
+
+    product.stockBodega = (product.stockBodega || 0) - qty;
+    product.stockAlmacen = (product.stockAlmacen || 0) + qty;
+    product.stock = product.stockBodega + product.stockAlmacen;
+
+    saveData();
+    refreshAllUI();
+    alert(`¡Traslado exitoso! Se movieron ${qty} unidades al almacén.`);
+}
         function activateLicense() {
             const inputKey = document.getElementById('license-input').value.trim();
             const expiryDate = parseLicense(inputKey);
@@ -2085,6 +2404,7 @@ async function saveData() {
             renderCartTabs();
             renderCart();
             renderInventory();
+            renderBodega();
             renderCashControl();
             renderAccounts();
             renderPayables();
@@ -2116,6 +2436,7 @@ function switchTab(tab) {
         if (tab === 'accounts') moduleName = 'Bancos & Efectivo';
         if (tab === 'statistics') moduleName = 'Estadísticas';
         if (tab === 'reports') moduleName = 'Reportes';
+        if (tab === 'bodega') renderBodega();
 
         const pin = prompt(`Ingrese el código PIN de seguridad de 4 dígitos para acceder a ${moduleName}:`);
         if (pin === null) return; // Si cancela, no hace nada
@@ -2125,21 +2446,15 @@ function switchTab(tab) {
         }
     }
 
-    const tabs = ['pos', 'inventory', 'cash', 'accounts', 'payables', 'clients', 'statistics', 'reports', 'billing'];
+   const tabs = ['pos', 'inventory', 'cash', 'accounts', 'payables', 'clients', 'statistics', 'reports', 'billing', 'bodega'];
     tabs.forEach(t => {
         const view = document.getElementById(`view-${t}`);
         const btn = document.getElementById(`btn-${t}`);
         const mobBtn = document.getElementById(`mob-btn-${t}`);
 
         if (view) view.classList.add('hidden');
-        if (btn) {
-            btn.classList.remove('bg-emerald-600', 'text-white');
-            btn.classList.add('hover:bg-slate-800');
-        }
-        if (mobBtn) {
-            mobBtn.classList.remove('text-emerald-400');
-            mobBtn.classList.add('text-slate-400');
-        }
+        if (btn) btn.classList.remove('bg-emerald-600', 'text-white');
+        if (mobBtn) mobBtn.classList.remove('text-emerald-400');
     });
 
     const activeView = document.getElementById(`view-${tab}`);
@@ -4459,11 +4774,26 @@ function renderStatistics() {
             }
         });
     }
-    function renderStatistics() {
-    // ... (código existente de KPIs y gráficos del sistema)
+   function renderStatistics() {
+    // ... tu lógica existente de tarjetas KPI ...
 
-    // 🌟 LLAMADA AL NUEVO PANEL ANALÍTICO DE PRODUCTOS
+    // Invocación para renderizar el panel analítico de productos
     renderProductAnalytics();
+
+    // ... renderizado de gráficos con Chart.js ...
+}// Agregar dentro de tu inicialización o al cargar los datos
+state.products.forEach(p => {
+    if (p.stockBodega === undefined) p.stockBodega = 10;
+    if (p.stockAlmacen === undefined) p.stockAlmacen = p.stock || 20;
+    p.stock = (p.stockBodega || 0) + (p.stockAlmacen || 0);
+});
+function renderStatistics() {
+    // ... tu lógica existente de tarjetas KPI ...
+
+    // Invocación para renderizar el panel analítico de productos
+    renderProductAnalytics();
+
+    // ... renderizado de gráficos con Chart.js ...
 }
 
     // ==========================================
@@ -4482,6 +4812,7 @@ function renderStatistics() {
             else if (s.method === 'Transferencia') transferenciaTotal += s.total;
             else if (s.method === 'Crédito') creditoTotal += s.total;
         });
+
 
         chartPaymentMethodsInstance = new Chart(ctxPayment, {
             type: 'doughnut',
