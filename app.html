@@ -16,27 +16,26 @@
 
   firebase.initializeApp(firebaseConfig);
   const db = firebase.firestore();
- // --- ESTADO GLOBAL FIJO (INMUTABLE AL REFRESCAR) ---
+// --- ESTADO GLOBAL FIJO Y SEGURO (INMUTABLE AL REFRESCAR) ---
 let state = {
-    products: [
+    products: JSON.parse(localStorage.getItem('pos_products')) || [
         { id: 1, name: "Producto Inicial 1", category: "General", price: 10000, stock: 50, stockBodega: 0, barcode: "770001" },
         { id: 2, name: "Producto Inicial 2", category: "General", price: 20000, stock: 30, stockBodega: 0, barcode: "770002" }
     ],
-    // ...
-    sales: [],
-    clients: [
+    sales: JSON.parse(localStorage.getItem('pos_sales')) || [],
+    clients: JSON.parse(localStorage.getItem('pos_clients')) || [
         { id: 1, name: "Cliente General", phone: "3000000000", debt: 0 }
     ],
-    accounts: [
+    accounts: JSON.parse(localStorage.getItem('pos_accounts')) || [
         { id: 1, name: 'Caja General', type: 'Efectivo', balance: 100000 },
         { id: 2, name: 'Bancolombia', type: 'Banco', balance: 500000 }
     ],
-    providers: [
+    providers: JSON.parse(localStorage.getItem('pos_providers')) || [
         { id: 1, name: "Proveedor Principal", phone: "3100000000" }
     ],
-    payables: [],
-    cashRegister: { isOpen: true, initialAmount: 100000, openTime: "Inicio Fijo", startTimeStamp: Date.now() },
-    cashHistory: [],
+    payables: JSON.parse(localStorage.getItem('pos_payables')) || [],
+    cashRegister: JSON.parse(localStorage.getItem('pos_cash')) || { isOpen: true, initialAmount: 100000, openTime: "Inicio Fijo", startTimeStamp: Date.now() },
+    cashHistory: JSON.parse(localStorage.getItem('pos_cash_history')) || [],
     cart: []
 };
 </script>
@@ -2382,24 +2381,21 @@ function listenRealtimeDatabase() {
     db.collection("pos_database").doc("main_data").onSnapshot((doc) => {
         if (doc.exists) {
             const cloudData = doc.data();
-            
-            // Obtenemos la marca de tiempo de la nube y del dispositivo local
             const cloudTime = new Date(cloudData.lastUpdated || 0).getTime();
             const localTime = new Date(localStorage.getItem('pos_last_updated') || 0).getTime();
 
-            // Sincronizar solo si la nube es más reciente, O si el local está vacío y la nube tiene datos
-            if (cloudTime >= localTime || (state.payables.length === 0 && cloudData.payables?.length > 0)) {
-                
-                state.products = cloudData.products || [];
-                state.sales = cloudData.sales || [];
-                state.clients = cloudData.clients || [];
-                state.accounts = cloudData.accounts || [];
-                state.providers = cloudData.providers || [];
-                state.payables = cloudData.payables || [];
+            // Sincronizar desde la nube SOLO si la nube es estrictamente más reciente
+            if (cloudTime > localTime) {
+                state.products = cloudData.products || state.products;
+                state.sales = cloudData.sales || state.sales;
+                state.clients = cloudData.clients || state.clients;
+                state.accounts = cloudData.accounts || state.accounts;
+                state.providers = cloudData.providers || state.providers;
+                state.payables = cloudData.payables || state.payables;
                 state.cashRegister = cloudData.cashRegister || state.cashRegister;
-                state.cashHistory = cloudData.cashHistory || [];
+                state.cashHistory = cloudData.cashHistory || state.cashHistory;
 
-                // Guardar localmente con la marca de tiempo de la nube
+                // Guardar localmente
                 localStorage.setItem('pos_products', JSON.stringify(state.products));
                 localStorage.setItem('pos_sales', JSON.stringify(state.sales));
                 localStorage.setItem('pos_clients', JSON.stringify(state.clients));
@@ -2411,16 +2407,13 @@ function listenRealtimeDatabase() {
                 localStorage.setItem('pos_last_updated', cloudData.lastUpdated);
 
                 refreshAllUI();
-                console.log("Datos sincronizados desde la nube de forma segura.");
-            } else {
-                console.log("Los datos locales son más recientes o iguales; se omite la sobrescritura.");
+                console.log("Datos sincronizados con éxito desde la nube.");
             }
         }
     }, (error) => {
         console.error("Error al escuchar en tiempo real:", error);
     });
 }
-
 async function saveData() {
     const timestamp = new Date().toISOString();
     
