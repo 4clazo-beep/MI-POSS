@@ -5703,10 +5703,10 @@ function saveEditedBillingInvoice() {
         return alert('La fecha y el nombre del cliente/proveedor son obligatorios.');
     }
 
-   // Variable temporal para editar los artículos de la factura seleccionada
+  // Variable temporal estrictamente aislada para la edición de facturas
 let tempEditBillingItems = [];
 
-// 1. Abrir modal y cargar la información real de la factura (artículos, precios y cantidades)
+// 1. Abrir modal y cargar la información real y limpia de la factura
 function openEditBillingModal(rawId, type) {
     if (!state.cashRegister.isOpen) return alert('La caja está cerrada. No se pueden realizar modificaciones.');
 
@@ -5718,6 +5718,9 @@ function openEditBillingModal(rawId, type) {
 
     const modal = document.getElementById('edit-billing-modal');
     if (!modal) return;
+
+    // 🔒 LIMPIEZA ABSOLUTA DE CUALQUIER RESIDUO ANTERIOR
+    tempEditBillingItems = [];
 
     document.getElementById('edit-bill-id').value = rawId;
     document.getElementById('edit-bill-type').value = type;
@@ -5735,21 +5738,14 @@ function openEditBillingModal(rawId, type) {
         document.getElementById('edit-bill-party').value = sale.clientName || 'Cliente Ocasional';
         document.getElementById('edit-bill-method').value = sale.method;
         
-        // Cargar ítems reales guardados en la venta
-        if (sale.items && sale.items.length > 0) {
+        // Copiar exclusivamente los ítems de esta venta (sin tocar state.cart)
+        if (sale.items && Array.isArray(sale.items) && sale.items.length > 0) {
             tempEditBillingItems = sale.items.map(i => ({
-                id: i.id || Date.now(),
+                id: i.id || Date.now() + Math.random(),
                 name: i.name,
-                qty: i.qty,
-                price: i.price || i.cost || 0
+                qty: Number(i.qty) || 1,
+                price: Number(i.price || i.cost) || 0
             }));
-        } else {
-            tempEditBillingItems = [{
-                id: Date.now(),
-                name: `Venta General (${sale.id})`,
-                qty: 1,
-                price: sale.total
-            }];
         }
 
     } else if (type === 'COMPRA') {
@@ -5762,29 +5758,21 @@ function openEditBillingModal(rawId, type) {
         document.getElementById('edit-bill-party').value = payable.providerName || 'Proveedor';
         document.getElementById('edit-bill-method').value = payable.status || 'Pendiente';
         
-        // Cargar ítems reales guardados en la compra
-        if (payable.items && payable.items.length > 0) {
+        // Copiar exclusivamente los ítems de esta compra
+        if (payable.items && Array.isArray(payable.items) && payable.items.length > 0) {
             tempEditBillingItems = payable.items.map(i => ({
-                id: i.id || Date.now(),
+                id: i.id || Date.now() + Math.random(),
                 name: i.name,
-                qty: i.qty,
-                price: i.cost !== undefined ? i.cost : (i.price || 0)
+                qty: Number(i.qty) || 1,
+                price: Number(i.cost !== undefined ? i.cost : i.price) || 0
             }));
-        } else {
-            tempEditBillingItems = [{
-                id: Date.now(),
-                name: `Factura ${payable.num} (Detalle General)`,
-                qty: 1,
-                price: payable.total
-            }];
         }
     }
 
     renderEditBillingItemsTable();
     modal.classList.remove('hidden');
 }
-
-// 2. Renderizar la tabla de artículos dentro del modal con campos editables
+// 2. Renderizar la tabla de artículos dentro del modal de edición
 function renderEditBillingItemsTable() {
     const tbody = document.getElementById('edit-billing-items-body');
     if (!tbody) return;
@@ -5792,14 +5780,14 @@ function renderEditBillingItemsTable() {
     let grandTotal = 0;
 
     if (tempEditBillingItems.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" class="p-3 text-center text-slate-400">Sin artículos en esta factura</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="p-3 text-center text-slate-400">Sin artículos en esta factura. Agregue uno desde el inventario.</td></tr>';
     } else {
         tempEditBillingItems.forEach((item, index) => {
             const subtotal = item.qty * item.price;
             grandTotal += subtotal;
 
             tbody.innerHTML += `
-                <tr class="hover:bg-slate-50 transition">
+                <tr class="hover:bg-slate-50 transition border-b border-slate-100">
                     <td class="p-2">
                         <input type="text" value="${item.name}" onchange="updateEditBillingItemValue(${index}, 'name', this.value)" class="w-full px-2 py-1 border rounded text-xs font-semibold text-slate-800 bg-white">
                     </td>
@@ -5820,10 +5808,10 @@ function renderEditBillingItemsTable() {
         });
     }
 
-    document.getElementById('edit-bill-total').value = grandTotal;
+    const totalEl = document.getElementById('edit-bill-total');
+    if (totalEl) totalEl.value = grandTotal;
 }
-
-// 3. Actualizar valores en tiempo real (nombre, cantidad, precio)
+// 3. Actualizar valores en tiempo real
 function updateEditBillingItemValue(index, field, newValue) {
     if (!tempEditBillingItems[index]) return;
 
@@ -5839,8 +5827,7 @@ function updateEditBillingItemValue(index, field, newValue) {
 
     renderEditBillingItemsTable();
 }
-
-// 4. Agregar producto seleccionado desde el inventario
+// 4. Agregar producto seleccionado desde el inventario de manera controlada
 function addSelectedInventoryToEditBilling() {
     const select = document.getElementById('edit-billing-select-prod');
     if (!select || !select.value) {
@@ -5867,32 +5854,28 @@ function addSelectedInventoryToEditBilling() {
     select.value = '';
     renderEditBillingItemsTable();
 }
-
-// 5. Llenar el select con los productos de inventario
+// 5. Poblar selector de productos
 function populateEditBillingProductSelect() {
     const select = document.getElementById('edit-billing-select-prod');
     if (!select) return;
 
     select.innerHTML = '<option value="">-- Seleccionar de Inventario --</option>';
     state.products.forEach(p => {
-        select.innerHTML += `<option value="${p.id}">${p.name} - ${formatCOP(p.price)}</option>`;
+        select.innerHTML += `<option value="${p.id}">${p.name} - ${formatCOP(p.price)} (Stock: ${p.stock})</option>`;
     });
 }
-
-// 6. Eliminar un renglón de la tabla
+// 6. Eliminar renglón
 function removeEditBillingItemRow(index) {
     tempEditBillingItems.splice(index, 1);
     renderEditBillingItemsTable();
 }
-
 // 7. Cerrar modal de edición
 function closeEditBillingModal() {
     const modal = document.getElementById('edit-billing-modal');
     if (modal) modal.classList.add('hidden');
     tempEditBillingItems = [];
 }
-
-// --- FUNCIÓN BLINDADA PARA GUARDAR FACTURA EDITADA SIN ALTERAR EL STOCK AUTOMÁTICAMENTE ---
+// 8. Guardar cambios en la factura editada con control estricto de stock
 function saveEditedBillingInvoice() {
     if (!state.cashRegister.isOpen) return alert('La caja está cerrada. No se pueden realizar modificaciones.');
 
@@ -5911,17 +5894,17 @@ function saveEditedBillingInvoice() {
     if (type === 'VENTA') {
         const sale = state.sales.find(s => s.id === rawId);
         if (sale) {
-            // 1. Revertir estrictamente el efecto de los ítems anteriores en el inventario real
+            // Revertir efecto de los ítems anteriores en el inventario
             if (sale.items && Array.isArray(sale.items)) {
                 sale.items.forEach(oldItem => {
                     const prod = state.products.find(p => p.id === oldItem.id || p.name.trim().toLowerCase() === oldItem.name.trim().toLowerCase());
                     if (prod) {
-                        prod.stock += oldItem.qty; // Devolvemos el stock original exacto
+                        prod.stock += oldItem.qty; 
                     }
                 });
             }
 
-            // 2. Aplicar los nuevos ítems de la venta y restar el stock exacto
+            // Aplicar los nuevos ítems de la venta editada
             sale.date = date;
             sale.clientName = party;
             sale.method = method;
@@ -5929,7 +5912,7 @@ function saveEditedBillingInvoice() {
             sale.items = tempEditBillingItems.map(i => {
                 const prod = state.products.find(p => p.id === i.id || p.name.trim().toLowerCase() === i.name.trim().toLowerCase());
                 if (prod) {
-                    prod.stock = Math.max(0, prod.stock - i.qty); // Restamos únicamente la cantidad exacta indicada
+                    prod.stock = Math.max(0, prod.stock - i.qty); 
                 }
                 return {
                     id: i.id,
@@ -5942,7 +5925,7 @@ function saveEditedBillingInvoice() {
     } else if (type === 'COMPRA') {
         const payable = state.payables.find(p => p.id === rawId);
         if (payable) {
-            // 1. Revertir el stock de compra anterior para evitar acumulaciones fantasma
+            // Revertir stock de compra anterior
             if (payable.items && Array.isArray(payable.items)) {
                 payable.items.forEach(oldItem => {
                     const prod = state.products.find(p => p.name.trim().toLowerCase() === oldItem.name.trim().toLowerCase());
@@ -5952,19 +5935,18 @@ function saveEditedBillingInvoice() {
                 });
             }
 
-            // 2. Aplicar los nuevos ítems de la compra exacta
+            // Aplicar nuevos ítems de la compra
             payable.date = date;
             payable.providerName = party;
             payable.status = method;
             payable.total = newTotal;
             payable.balance = newTotal - (payable.paid || 0);
             payable.items = tempEditBillingItems.map(i => {
-                const prod = state.products.find(p => p.name.trim().toLowerCase() === i.name.trim().toLowerCase());
+                const prod = state.products.find(p => p.id === i.id || p.name.trim().toLowerCase() === i.name.trim().toLowerCase());
                 if (prod) {
-                    prod.stock += i.qty; // Sumamos exactamente la cantidad ingresada
+                    prod.stock += i.qty; 
                     if (i.price > 0) prod.price = i.price;
                 } else {
-                    // Si el artículo es nuevo, se crea con la cantidad exacta especificada
                     state.products.push({
                         id: Date.now() + Math.random(),
                         name: i.name.trim(),
@@ -5985,15 +5967,12 @@ function saveEditedBillingInvoice() {
         }
     }
 
-    // Recalcular deudas de clientes automáticamente si aplica
     recalculateClientDebts();
-
-    // Guardar de forma persistente y sincronizar
     saveData();
     closeEditBillingModal();
     refreshAllUI();
     
-    alert('¡Factura modificada con éxito y stock sincronizado sin alteraciones automáticas!');
+    alert('¡Factura modificada con éxito y stock sincronizado correctamente!');
 }
     // ⚡ PASO CLAVE: Recalcular automáticamente las deudas de los clientes con base en las facturas actualizadas
     recalculateClientDebts();
