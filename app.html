@@ -5868,7 +5868,9 @@ function closeEditBillingModal() {
     if (modal) modal.classList.add('hidden');
     tempEditBillingItems = [];
 }
-// 8. Guardar cambios en la factura editada con control estricto de stock
+// =========================================================================
+// SOLUCIÓN: GUARDADO INTELIGENTE POR DIFERENCIAS EN EDICIÓN DE FACTURAS
+// =========================================================================
 function saveEditedBillingInvoice() {
     if (!state.cashRegister.isOpen) return alert('La caja está cerrada. No se pueden realizar modificaciones.');
 
@@ -5887,7 +5889,7 @@ function saveEditedBillingInvoice() {
     if (type === 'VENTA') {
         const sale = state.sales.find(s => s.id === rawId);
         if (sale) {
-            // Revertir efecto de los ítems anteriores en el inventario
+            // 1. REVERTIR EL STOCK ANTERIOR DE LA VENTA (Devolver al POS lo que se había vendido)
             if (sale.items && Array.isArray(sale.items)) {
                 sale.items.forEach(oldItem => {
                     const prod = state.products.find(p => p.id === oldItem.id || p.name.trim().toLowerCase() === oldItem.name.trim().toLowerCase());
@@ -5897,7 +5899,7 @@ function saveEditedBillingInvoice() {
                 });
             }
 
-            // Aplicar los nuevos ítems de la venta editada
+            // 2. APLICAR ÚNICAMENTE LAS NUEVAS CANTIDADES (Descontar el nuevo stock real)
             sale.date = date;
             sale.clientName = party;
             sale.method = method;
@@ -5905,7 +5907,7 @@ function saveEditedBillingInvoice() {
             sale.items = tempEditBillingItems.map(i => {
                 const prod = state.products.find(p => p.id === i.id || p.name.trim().toLowerCase() === i.name.trim().toLowerCase());
                 if (prod) {
-                    prod.stock = Math.max(0, prod.stock - i.qty); 
+                    prod.stock = Math.max(0, prod.stock - i.qty); // Resta solo el cambio actual
                 }
                 return {
                     id: i.id,
@@ -5918,7 +5920,7 @@ function saveEditedBillingInvoice() {
     } else if (type === 'COMPRA') {
         const payable = state.payables.find(p => p.id === rawId);
         if (payable) {
-            // Revertir stock de compra anterior
+            // 1. REVERTIR EL STOCK ANTERIOR DE LA COMPRA (Quitar de bodega lo que traía la factura vieja)
             if (payable.items && Array.isArray(payable.items)) {
                 payable.items.forEach(oldItem => {
                     const prod = state.products.find(p => p.name.trim().toLowerCase() === oldItem.name.trim().toLowerCase());
@@ -5928,7 +5930,7 @@ function saveEditedBillingInvoice() {
                 });
             }
 
-            // Aplicar nuevos ítems de la compra
+            // 2. APLICAR ÚNICAMENTE LOS NUEVOS ARTÍCULOS Y CANTIDADES
             payable.date = date;
             payable.providerName = party;
             payable.status = method;
@@ -5937,7 +5939,7 @@ function saveEditedBillingInvoice() {
             payable.items = tempEditBillingItems.map(i => {
                 const prod = state.products.find(p => p.id === i.id || p.name.trim().toLowerCase() === i.name.trim().toLowerCase());
                 if (prod) {
-                    prod.stock += i.qty; 
+                    prod.stock += i.qty; // Suma solo la nueva cantidad editada
                     if (i.price > 0) prod.price = i.price;
                 } else {
                     state.products.push({
@@ -5960,12 +5962,13 @@ function saveEditedBillingInvoice() {
         }
     }
 
-    recalculateClientDebts();
+    // Sincronizar cartera, guardar y actualizar interfaz
+    if (typeof recalculateClientDebts === 'function') recalculateClientDebts();
     saveData();
     closeEditBillingModal();
     refreshAllUI();
     
-    alert('¡Factura modificada con éxito y stock sincronizado correctamente!');
+    alert('¡Factura modificada con éxito y stock sincronizado por diferencias sin duplicar!');
 }
     // ⚡ PASO CLAVE: Recalcular automáticamente las deudas de los clientes con base en las facturas actualizadas
     recalculateClientDebts();
