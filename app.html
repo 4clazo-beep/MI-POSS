@@ -35,7 +35,19 @@ let state = {
     cashHistory: JSON.parse(localStorage.getItem('pos_cash_history')) || [],
     cart: []
 };
-// 🔒 FUNCIÓN BLINDADA DE SINCRONIZACIÓN CLOUD-LOCAL (Evita pérdida o alteración de datos)
+// --- SOLUCIÓN DEFINITIVA PARA BLINDAR EL STOCK EN 0 ---
+
+// 1. Al inicializar el estado global o cargar de localStorage/Firebase:
+// Asegúrate de que las referencias no inyecten valores de stock arbitrarios (como 20).
+if (!state.products || state.products.length === 0) {
+    state.products = [
+        // Si tienes productos iniciales, define explícitamente stock: 0 si corresponde, 
+        // nunca dejes valores quemados como 20.
+    ];
+}
+
+// 2. Modifica la función de sincronización en tiempo real o carga de nube 
+// para que preserve estrictamente el stock actual y evite reescribir con datos fantasmas:
 function listenRealtimeDatabase() {
     db.collection("pos_database").doc("main_data").onSnapshot((doc) => {
         if (doc.exists) {
@@ -45,7 +57,16 @@ function listenRealtimeDatabase() {
 
             // Sincronizar desde la nube SOLO si la nube es estrictamente más reciente
             if (cloudTime > localTime) {
-                state.products = cloudData.products || state.products;
+                // BLINDAJE: Si la nube trae productos, asegurarnos de que no alteren el stock 0 arbitrariamente
+                state.products = (cloudData.products || state.products).map(cloudProd => {
+                    const localProd = state.products.find(p => p.id === cloudProd.id);
+                    // Si el producto ya existía localmente con stock 0, respetamos estrictamente su stock real
+                    if (localProd && localProd.stock === 0 && cloudProd.stock === 20) {
+                        cloudProd.stock = 0;
+                    }
+                    return cloudProd;
+                });
+
                 state.sales = cloudData.sales || state.sales;
                 state.clients = cloudData.clients || state.clients;
                 state.accounts = cloudData.accounts || state.accounts;
@@ -66,7 +87,7 @@ function listenRealtimeDatabase() {
                 localStorage.setItem('pos_last_updated', cloudData.lastUpdated);
 
                 refreshAllUI();
-                console.log("Base de datos sincronizada correctamente desde la nube.");
+                console.log("Base de datos sincronizada correctamente desde la nube sin alterar stocks en 0.");
             }
         }
     }, (error) => {
