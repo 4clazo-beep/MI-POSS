@@ -94,7 +94,27 @@ function listenRealtimeDatabase() {
         console.error("Error al escuchar en tiempo real:", error);
     });
 }
+// Delegación de eventos global para cualquier banner informativo de módulo
+document.addEventListener('click', (event) => {
+    const banner = event.target.closest('.module-info-banner');
+    if (banner) {
+        banner.classList.add('fade-out');
+    }
+});
+
+// Asegúrate de que cada vez que cambies de pestaña o cargues un módulo, 
+// el banner recupere su estado original removiendo la clase 'fade-out'.
+// (Integra esta línea dentro de tu función switchTab o la función que renderiza cada módulo)
+function resetModuleBanner() {
+    const activeBanner = document.querySelector('.module-info-banner');
+    if (activeBanner) {
+        activeBanner.classList.remove('fade-out');
+        activeBanner.style.opacity = '1';
+        activeBanner.style.transform = 'translateY(0)';
+    }
+}
 </script>
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Sistema POS Profesional - Venta e Inventario</title>
@@ -108,6 +128,41 @@ function listenRealtimeDatabase() {
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
     <style>
+        /* DISEÑO PROFESIONAL Y TRANSICIÓN DE DESVANECIMIENTO PARA LA ALERTA DE STOCK BAJO */
+#low-stock-global-banner {
+    transition: opacity 0.6s cubic-bezier(0.4, 0, 0.2, 1), transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    opacity: 1;
+    transform: translateY(0);
+    cursor: pointer;
+}
+
+#low-stock-global-banner.fade-out {
+    opacity: 0;
+    transform: translateY(15px);
+    pointer-events: none; /* Evita clics adicionales mientras desaparece */
+}
+/* Corrección de altura y desvanecimiento para banners informativos */
+.module-info-banner, #module-info-banner {
+    cursor: pointer;
+    transition: opacity 0.5s ease, transform 0.5s ease, max-height 0.5s ease, margin 0.5s ease, padding 0.5s ease;
+    opacity: 1;
+    transform: translateY(0);
+    max-height: none; /* Evita que el texto o contenido se corte a la mitad */
+    overflow: visible; /* Permite mostrar todo el contenido sin restricciones */
+}
+
+.module-info-banner.fade-out, #module-info-banner.fade-out {
+    opacity: 0;
+    transform: translateY(-10px);
+    max-height: 0;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    border: none !important;
+    overflow: hidden;
+    pointer-events: none;
+}
         /* ANIMACIONES PROFESIONALES PARA LOGO Y NOMBRE */
 @keyframes posLogoFloat {
     0%, 100% {
@@ -2642,8 +2697,11 @@ async function saveData() {
 
         document.getElementById('current-date').innerText = new Date().toLocaleDateString();
 
+// Variable global para almacenar el temporizador del banner
+let bannerTimeout = null;
+
 function switchTab(tab) {
-    // 🔒 PROTECCIÓN DE MÓDULOS CON PIN 1234 (Incluye Estadísticas y Reportes)
+    // 🔒 PROTECCIÓN DE MÓDULOS CON PIN 1234
     if (tab === 'inventory' || tab === 'billing' || tab === 'clients' || tab === 'payables' || tab === 'accounts' || tab === 'statistics' || tab === 'reports') {
         let moduleName = 'este módulo';
         if (tab === 'inventory') moduleName = 'Inventarios';
@@ -2653,17 +2711,16 @@ function switchTab(tab) {
         if (tab === 'accounts') moduleName = 'Bancos & Efectivo';
         if (tab === 'statistics') moduleName = 'Estadísticas';
         if (tab === 'reports') moduleName = 'Reportes';
-        if (tab === 'bodega') renderBodega();
 
         const pin = prompt(`Ingrese el código PIN de seguridad de 4 dígitos para acceder a ${moduleName}:`);
-        if (pin === null) return; // Si cancela, no hace nada
+        if (pin === null) return; 
         if (pin.trim() !== "1234") {
             alert("❌ Código PIN incorrecto. Acceso denegado.");
             return;
         }
     }
 
-   const tabs = ['pos', 'inventory', 'cash', 'accounts', 'payables', 'clients', 'statistics', 'reports', 'billing', 'bodega'];
+    const tabs = ['pos', 'inventory', 'cash', 'accounts', 'payables', 'clients', 'statistics', 'reports', 'billing', 'bodega'];
     tabs.forEach(t => {
         const view = document.getElementById(`view-${t}`);
         const btn = document.getElementById(`btn-${t}`);
@@ -2697,12 +2754,47 @@ function switchTab(tab) {
         clients: 'Clientes y Créditos',
         statistics: 'Estadísticas Profesionales',
         reports: 'Reportes y Estadísticas',
-        billing: 'Módulo de Facturación General'
+        billing: 'Módulo de Facturación General',
+        bodega: 'Módulo de Bodega de Perfumes'
     };
     document.getElementById('page-title').innerText = titles[tab] || '';
     
-    updateModuleInfoBanner(tab);
+    if (typeof updateModuleInfoBanner === 'function') {
+        updateModuleInfoBanner(tab);
+    }
 
+    // =========================================================================
+    // CORRECCIÓN DEFINITIVA: DESVANECIMIENTO DEL BANNER A LOS 60 SEGUNDOS (1 MIN)
+    // =========================================================================
+    const infoBanner = document.getElementById('module-info-banner');
+    if (infoBanner) {
+        // 1. Limpiar cualquier temporizador previo para reiniciar la cuenta al cambiar de módulo
+        if (bannerTimeout) {
+            clearTimeout(bannerTimeout);
+            bannerTimeout = null;
+        }
+
+        // 2. Forzar que el banner sea completamente visible de inmediato al entrar
+        infoBanner.style.opacity = '1';
+        infoBanner.style.visibility = 'visible';
+        infoBanner.style.display = 'flex'; // Asegura que el flexbox esté activo
+        infoBanner.style.transition = 'opacity 1s ease-in-out';
+
+        // 3. Programar la opacidad en 0 tras exactamente 60,000 milisegundos (1 minuto)
+        bannerTimeout = setTimeout(() => {
+            infoBanner.style.opacity = '0';
+            
+            // Ocultar visualmente por completo tras completarse la transición de 1 segundo
+            setTimeout(() => {
+                if (infoBanner.style.opacity === '0') {
+                    infoBanner.style.visibility = 'hidden';
+                }
+            }, 1000); 
+        }, 60000); 
+    }
+    // =========================================================================
+
+    // Renderizadores de módulos
     if (tab === 'cash') renderCashControl();
     if (tab === 'accounts') renderAccounts();
     if (tab === 'payables') {
@@ -2713,6 +2805,7 @@ function switchTab(tab) {
     if (tab === 'reports') renderReports();
     if (tab === 'billing') renderBillingModule();
     if (tab === 'clients') renderClients();
+    if (tab === 'bodega') renderBodega();
 }
         function updateClientsDatalist() {
             const datalist = document.getElementById('clients-datalist');
@@ -6570,6 +6663,161 @@ function updateCartDiscount(val) {
     const activeCart = getActiveCart();
     activeCart.discount = parseFloat(val) || 0;
     renderCart();
+}
+// --- SISTEMA DE ALERTAS DE STOCK BAJO ---
+
+// 1. Añadir umbral de stock bajo por defecto a los productos si no lo tienen
+function checkLowStockAlerts() {
+    if (!state.products || state.products.length === 0) return;
+
+    let lowStockProducts = [];
+
+    state.products.forEach(p => {
+        // Si el usuario no ha definido un límite, por defecto se activa si tiene 5 o menos unidades
+        const minStock = p.minStock !== undefined ? p.minStock : 5;
+        const currentStock = p.stock !== undefined ? p.stock : (p.stockBodega || 0);
+
+        if (currentStock <= minStock) {
+            lowStockProducts.push({
+                name: p.name,
+                stock: currentStock,
+                minStock: minStock
+            });
+        }
+    });
+
+    // Si hay productos con stock bajo, mostrar alerta visual y notificación push del navegador
+    if (lowStockProducts.length > 0) {
+        showStockNotificationBanner(lowStockProducts);
+        
+        // Si el navegador soporta Notificaciones y el usuario dio permisos
+        if ("Notification" in window && Notification.permission === "granted") {
+            new Notification("⚠️ Alerta de Stock Bajo", {
+                body: `Tienes ${lowStockProducts.length} producto(s) por debajo del stock mínimo establecido.`,
+                icon: "https://cdn-icons-png.flaticon.com/512/565/565547.png"
+            });
+        }
+    }
+}
+
+// 2. Banner visual flotante dentro de la aplicación
+function showStockNotificationBanner(products) {
+    let banner = document.getElementById('low-stock-global-banner');
+    if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'low-stock-global-banner';
+        banner.className = 'fixed bottom-4 right-4 z-50 bg-rose-600 text-white p-4 rounded-2xl shadow-2xl max-w-sm w-[90%] border border-rose-400 animate-bounce';
+        document.body.appendChild(banner);
+    }
+
+    let listHtml = products.slice(0, 3).map(p => `• <b>${p.name}</b> (Stock: ${p.stock} / Mín: ${p.minStock})`).join('<br>');
+    if (products.length > 3) {
+        listHtml += `<br><i>...y ${products.length - 3} producto(s) más.</i>`;
+    }
+
+    banner.innerHTML = `
+        <div class="flex justify-between items-start">
+            <div class="flex items-center gap-2">
+                <i class="fa-solid fa-triangle-exclamation text-lg"></i>
+                <h4 class="font-bold text-sm">¡Stock Bajo Detectado!</h4>
+            </div>
+            <button onclick="document.getElementById('low-stock-global-banner').remove()" class="text-white hover:text-rose-200 font-bold">✕</button>
+        </div>
+        <p class="text-xs mt-2 opacity-90">${listHtml}</p>
+        <button onclick="switchTab('inventory')" class="mt-3 w-full bg-white text-rose-600 font-bold py-1.5 rounded-xl text-xs shadow hover:bg-rose-50 transition">
+            Ver Inventario
+        </button>
+    `;
+}
+
+// Solicitar permisos de notificación en navegador al cargar la app
+document.addEventListener("DOMContentLoaded", () => {
+    if ("Notification" in window && Notification.permission !== "granted") {
+        Notification.requestPermission();
+    }
+    // Ejecutar verificación al iniciar
+    setTimeout(checkLowStockAlerts, 2000);
+});
+// 2. Banner visual flotante rediseñado con desvanecimiento profesional al hacer clic
+function showStockNotificationBanner(products) {
+    let banner = document.getElementById('low-stock-global-banner');
+    if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'low-stock-global-banner';
+        // Diseño profesional con efecto glassmorphism, gradiente rojo sutil y sombra elevada
+        banner.className = 'fixed bottom-5 right-5 z-50 bg-gradient-to-r from-rose-900/95 to-red-950/95 text-white p-4 rounded-2xl shadow-2xl backdrop-blur-md max-w-sm w-[90%] border border-rose-500/30';
+        
+        // Evento de clic para desvanecer profesionalmente al hacer clic en cualquier parte de la alerta
+        banner.addEventListener('click', () => {
+            banner.classList.add('fade-out');
+            setTimeout(() => banner.remove(), 600); // Remueve del DOM tras la animación
+        });
+
+        document.body.appendChild(banner);
+    }
+
+    let listHtml = products.slice(0, 3).map(p => `• <span class="font-semibold text-rose-200">${p.name}</span> (Stock: ${p.stock} / Mín: ${p.minStock})`).join('<br>');
+    if (products.length > 3) {
+        listHtml += `<br><span class="italic text-rose-300">...y ${products.length - 3} producto(s) más.</span>`;
+    }
+
+    banner.innerHTML = `
+        <div class="flex justify-between items-start gap-3">
+            <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0">
+                    <i class="fa-solid fa-triangle-exclamation text-base animate-pulse"></i>
+                </div>
+                <div>
+                    <h4 class="font-extrabold text-xs md:text-sm tracking-wide text-white">Alerta de Stock Bajo</h4>
+                    <p class="text-[11px] text-rose-200/90 mt-0.5">Haz clic aquí para descartar</p>
+                </div>
+            </div>
+            <button onclick="event.stopPropagation(); document.getElementById('low-stock-global-banner').classList.add('fade-out'); setTimeout(() => document.getElementById('low-stock-global-banner').remove(), 600);" class="text-rose-300 hover:text-white transition p-1">
+                <i class="fa-solid fa-xmark text-sm"></i>
+            </button>
+        </div>
+        <div class="mt-3 pt-2 border-t border-rose-800/50 text-xs leading-relaxed text-slate-200">
+            ${listHtml}
+        </div>
+        <button onclick="event.stopPropagation(); switchTab('inventory')" class="mt-3 w-full bg-white/10 hover:bg-white/20 text-white font-bold py-2 rounded-xl text-xs transition border border-white/10 flex items-center justify-center gap-1.5 shadow-sm">
+            <i class="fa-solid fa-boxes-stacked"></i> Ver Inventario
+        </button>
+    `;
+}
+// Delegación de eventos para desvanecer el banner del módulo al hacer clic
+document.addEventListener('click', (event) => {
+    const banner = event.target.closest('#module-info-banner');
+    if (banner) {
+        banner.classList.add('fade-out');
+    }
+});
+
+// Asegurar que el banner recupere su estado visible cada vez que cambias de módulo (función switchTab)
+// (Puedes integrar esto dentro de tu función switchTab existente)
+function resetModuleBanner() {
+    const banner = document.getElementById('module-info-banner');
+    if (banner) {
+        banner.classList.remove('fade-out');
+        banner.style.opacity = '1';
+        banner.style.maxHeight = '150px';
+    }
+}
+// Delegación de eventos global para desvanecer cualquier banner informativo al hacer clic
+document.addEventListener('click', (event) => {
+    const banner = event.target.closest('#module-info-banner, .module-info-banner');
+    if (banner) {
+        banner.classList.add('fade-out');
+    }
+});
+
+// Función para restablecer la visibilidad del banner al cambiar de pestaña/módulo
+function resetModuleBanner() {
+    const banner = document.getElementById('module-info-banner');
+    if (banner) {
+        banner.classList.remove('fade-out');
+        banner.style.opacity = '1';
+        banner.style.maxHeight = '150px';
+    }
 }
  </script>
  <!-- MODAL EDICIÓN COMPLETA DE FACTURA CON ARTÍCULOS REALES -->
