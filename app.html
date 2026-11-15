@@ -16,12 +16,14 @@
 
   firebase.initializeApp(firebaseConfig);
   const db = firebase.firestore();
-// --- ESTADO GLOBAL BLINDADO CONTRA STOCK FANTASMA ---
 let state = {
+    // Dentro de let state = { ... }
+transfers: JSON.parse(localStorage.getItem('pos_transfers')) || [],
     products: (JSON.parse(localStorage.getItem('pos_products')) || []).map(p => {
-        if (p.stockBodega === undefined) p.stockBodega = 0;
-        if (p.stockAlmacen === undefined) p.stockAlmacen = p.stock !== undefined ? p.stock : 0;
-        p.stock = (Number(p.stockBodega) || 0) + (Number(p.stockAlmacen) || 0);
+        // Preservar estrictamente el stock real existente sin reasignaciones fantasma
+        p.stockBodega = p.stockBodega !== undefined ? Number(p.stockBodega) || 0 : 0;
+        p.stockAlmacen = p.stockAlmacen !== undefined ? Number(p.stockAlmacen) || 0 : (p.stock !== undefined ? Number(p.stock) || 0 : 0);
+        p.stock = p.stockBodega + p.stockAlmacen;
         return p;
     }),
     sales: JSON.parse(localStorage.getItem('pos_sales')) || [],
@@ -40,62 +42,6 @@ let state = {
     cashHistory: JSON.parse(localStorage.getItem('pos_cash_history')) || [],
     cart: []
 };
-
-// --- SINCRONIZACIÓN EN TIEMPO REAL BLINDADA ---
-function listenRealtimeDatabase() {
-    db.collection("pos_database").doc("main_data").onSnapshot((doc) => {
-        if (doc.exists) {
-            const cloudData = doc.data();
-            const cloudTime = new Date(cloudData.lastUpdated || 0).getTime();
-            const localTime = new Date(localStorage.getItem('pos_last_updated') || 0).getTime();
-
-            if (cloudTime > localTime) {
-                // BLINDAJE ESTRICTO: Normalizar y limpiar cualquier stock fantasma proveniente de la nube
-                state.products = (cloudData.products || []).map(cloudProd => {
-                    if (cloudProd.stockBodega === undefined) cloudProd.stockBodega = 0;
-                    if (cloudProd.stockAlmacen === undefined) {
-                        cloudProd.stockAlmacen = cloudProd.stock !== undefined ? cloudProd.stock : 0;
-                    }
-                    // Forzar que el stock total sea estrictamente la suma real y nunca un valor quemado
-                    cloudProd.stock = (Number(cloudProd.stockBodega) || 0) + (Number(cloudProd.stockAlmacen) || 0);
-                    return cloudProd;
-                });
-
-                state.sales = cloudData.sales || state.sales;
-                state.clients = cloudData.clients || state.clients;
-                state.accounts = cloudData.accounts || state.accounts;
-                state.providers = cloudData.providers || state.providers;
-                state.payables = cloudData.payables || state.payables;
-                state.cashRegister = cloudData.cashRegister || state.cashRegister;
-                state.cashHistory = cloudData.cashHistory || state.cashHistory;
-
-                // Guardar localmente y actualizar UI
-                localStorage.setItem('pos_products', JSON.stringify(state.products));
-                localStorage.setItem('pos_sales', JSON.stringify(state.sales));
-                localStorage.setItem('pos_clients', JSON.stringify(state.clients));
-                localStorage.setItem('pos_accounts', JSON.stringify(state.accounts));
-                localStorage.setItem('pos_providers', JSON.stringify(state.providers));
-                localStorage.setItem('pos_payables', JSON.stringify(state.payables));
-                localStorage.setItem('pos_cash', JSON.stringify(state.cashRegister));
-                localStorage.setItem('pos_cash_history', JSON.stringify(state.cashHistory));
-                localStorage.setItem('pos_last_updated', cloudData.lastUpdated);
-
-                refreshAllUI();
-                console.log("Base de datos sincronizada correctamente protegiendo el stock real.");
-            }
-        }
-    }, (error) => {
-        console.error("Error al escuchar en tiempo real:", error);
-    });
-}
-// Delegación de eventos global para cualquier banner informativo de módulo
-document.addEventListener('click', (event) => {
-    const banner = event.target.closest('.module-info-banner');
-    if (banner) {
-        banner.classList.add('fade-out');
-    }
-});
-
 // Asegúrate de que cada vez que cambies de pestaña o cargues un módulo, 
 // el banner recupere su estado original removiendo la clase 'fade-out'.
 // (Integra esta línea dentro de tu función switchTab o la función que renderiza cada módulo)
@@ -122,6 +68,27 @@ function resetModuleBanner() {
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
     <style>
+        /* Ocultar toda la interfaz de la app cuando se active la impresión */
+@media print {
+    body * {
+        visibility: hidden !important;
+    }
+    
+    #transfer-print-document, 
+    #transfer-print-document * {
+        visibility: visible !important;
+    }
+
+    #transfer-print-document {
+        position: absolute !important;
+        left: 0 !important;
+        top: 0 !important;
+        width: 80mm !important;
+        display: block !important;
+        background: #fff !important;
+        z-index: 999999;
+    }
+}
         /* DISEÑO PROFESIONAL Y TRANSICIÓN DE DESVANECIMIENTO PARA LA ALERTA DE STOCK BAJO */
 #low-stock-global-banner {
     transition: opacity 0.6s cubic-bezier(0.4, 0, 0.2, 1), transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
@@ -937,41 +904,442 @@ function resetModuleBanner() {
         </table>
     </div>
 </section>
-<!-- VISTA BODEGA REDISEÑADA: GESTIÓN DE PERFUMES Y EXISTENCIAS EN BODEGA -->
+<!-- CÓDIGO NUEVO PARA EL MÓDULO BODEGA CON TRASLADO Y DOCUMENTO IMPRIMIBLE -->
+
+<!-- CÓDIGO ACTUALIZADO: MÓDULO BODEGA + TRASLADO + COMPROBANTE DETALLADO -->
+
+<!-- VISTA BODEGA -->
 <section id="view-bodega" class="hidden space-y-4 md:space-y-6">
-    <!-- PANEL PRINCIPAL Y FILTROS DE BODEGA -->
     <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-sm p-4 md:p-6 border border-slate-100 dark:border-slate-800 space-y-4">
         <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 border-b dark:border-slate-800 pb-4">
             <div>
                 <h2 class="text-base md:text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
                     <i class="fa-solid fa-warehouse text-amber-500"></i> Bodega Central de Perfumes
                 </h2>
-                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Control de stock exclusivo en bodega central, mililitros y referencias.</p>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Control de stock en bodega, traslados al almacén y generación de comprobantes detallados.</p>
             </div>
             
-            <!-- BOTÓN AÑADIR PERFUME A BODEGA -->
-            <button onclick="openBodegaModal()" class="w-full md:w-auto bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold px-5 py-2.5 rounded-xl transition shadow-lg shadow-amber-500/25 text-xs md:text-sm flex items-center justify-center gap-2 cursor-pointer active:scale-95">
-                <i class="fa-solid fa-plus text-sm"></i>
-                <span>Nuevo Perfume en Bodega</span>
+            <div class="flex items-center gap-2 w-full md:w-auto">
+                <button onclick="openTransferModal()" class="flex-1 md:flex-none bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold px-4 py-2.5 rounded-xl transition shadow-lg shadow-emerald-600/25 text-xs md:text-sm flex items-center justify-center gap-2 cursor-pointer active:scale-95">
+                    <i class="fa-solid fa-right-left text-sm"></i>
+                    <span>Trasladar Artículos</span>
+                </button>
+                
+                <button onclick="openBodegaModal()" class="flex-1 md:flex-none bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold px-4 py-2.5 rounded-xl transition shadow-lg shadow-amber-500/25 text-xs md:text-sm flex items-center justify-center gap-2 cursor-pointer active:scale-95">
+                    <i class="fa-solid fa-plus text-sm"></i>
+                    <span>Nuevo Perfume</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="flex flex-col md:flex-row justify-between items-center gap-3">
+            <div class="relative w-full md:w-96">
+                <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+                <input type="text" id="bodega-search" oninput="renderBodega()" placeholder="Buscar perfume por nombre o categoría..." class="w-full pl-10 pr-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs md:text-sm bg-slate-50 dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500">
+            </div>
+            <div class="text-xs text-slate-500 font-semibold whitespace-nowrap">
+                Total Unidades en Bodega: <span id="bodega-count" class="text-amber-600 font-bold text-sm">0</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse min-w-[600px]">
+                <thead>
+                    <tr class="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-100 dark:border-slate-800 text-slate-500 dark:text-slate-400 text-[11px] font-bold uppercase tracking-wider">
+                        <th class="p-3 md:p-4">Perfume / Referencia</th>
+                        <th class="p-3 md:p-4">Categoría / Línea</th>
+                        <th class="p-3 md:p-4 text-center">Stock Bodega</th>
+                        <th class="p-3 md:p-4 text-center">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="bodega-table-body" class="divide-y divide-slate-100 dark:divide-slate-800 text-xs md:text-sm"></tbody>
+            </table>
+        </div>
+    </div>
+</section>
+<!-- MODAL DE TRASLADO MÚLTIPLE -->
+<div id="transfer-modal" class="fixed inset-0 bg-slate-900/60 hidden flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+    <div class="bg-white dark:bg-slate-900 rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[90vh] overflow-y-auto">
+        <div class="flex justify-between items-center border-b pb-3">
+            <h3 class="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                <i class="fa-solid fa-right-left text-emerald-600"></i> Trasladar Múltiples Artículos (Bodega ➔ Almacén)
+            </h3>
+            <button onclick="closeTransferModal()" class="text-slate-400 hover:text-slate-600 font-bold text-lg">
+                <i class="fa-solid fa-xmark"></i>
             </button>
         </div>
 
-       <!-- ZONA DE BÚSQUEDA Y CONTADOR DE REFERENCIAS EN BODEGA -->
-<div class="flex flex-col md:flex-row justify-between items-center gap-3">
-    <div class="relative w-full md:w-96">
-        <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
-        <input type="text" id="bodega-search" oninput="renderBodega()" placeholder="Buscar perfume por nombre, marca o ml..." class="w-full pl-10 pr-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs md:text-sm bg-slate-50 dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500">
+        <div class="space-y-3">
+            <div class="grid grid-cols-1 md:grid-cols-12 gap-2 items-end bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border">
+                <div class="md:col-span-6">
+                    <label class="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Seleccionar Perfume</label>
+                    <select id="transfer-product-select" class="w-full px-3 py-2 border rounded-xl text-xs bg-white dark:bg-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-emerald-500">
+                        <option value="">-- Seleccionar producto --</option>
+                    </select>
+                </div>
+                <div class="md:col-span-4">
+                    <label class="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Cantidad</label>
+                    <input type="number" id="transfer-qty" min="1" value="1" class="w-full px-3 py-2 border rounded-xl text-xs font-bold text-emerald-600 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-emerald-500">
+                </div>
+                <div class="md:col-span-2">
+                    <button onclick="addTransferItemRow()" type="button" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded-xl text-xs flex items-center justify-center gap-1 shadow-sm">
+                        <i class="fa-solid fa-plus"></i> Agregar
+                    </button>
+                </div>
+            </div>
+
+            <!-- Tabla de artículos a trasladar -->
+            <div class="max-h-44 overflow-y-auto border rounded-xl bg-white dark:bg-slate-900">
+                <table class="w-full text-left text-xs">
+                    <thead class="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold uppercase border-b">
+                        <tr>
+                            <th class="p-2">Artículo</th>
+                            <th class="p-2 text-center w-24">Bodega Disp.</th>
+                            <th class="p-2 text-center w-20">Cant.</th>
+                            <th class="p-2 text-center w-12">Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody id="transfer-items-table-body" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+                </table>
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Motivo / Observación (Opcional)</label>
+                <input type="text" id="transfer-reason" placeholder="Ej. Reabastecimiento general de estantería" class="w-full px-3 py-2 border rounded-xl text-sm bg-slate-50 dark:bg-slate-800 dark:text-white">
+            </div>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-3 border-t">
+            <button onclick="closeTransferModal()" class="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl transition text-xs font-medium">Cancelar</button>
+            <button onclick="executeStockTransferAndPrint()" class="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl transition text-xs font-bold shadow-md flex items-center gap-2">
+                <i class="fa-solid fa-print"></i> Trasladar e Imprimir Detalle
+            </button>
+        </div>
     </div>
-   
 </div>
+<!-- MODAL DE VISTA PREVIA DEL COMPROBANTE DE TRASLADO -->
+<div id="transfer-preview-modal" class="fixed inset-0 bg-slate-900/70 hidden flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+    <div class="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full p-5 space-y-4 shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[92vh] flex flex-col">
+        <div class="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-3">
+            <h3 class="text-base font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                <i class="fa-solid fa-eye text-emerald-600"></i> Vista Previa del Comprobante
+            </h3>
+            <button onclick="closeTransferPreview()" class="text-slate-400 hover:text-rose-500 font-bold text-lg">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <!-- Contenedor donde se mostrará el documento con scroll -->
+        <div class="overflow-y-auto flex-1 bg-slate-100 dark:bg-slate-950 p-4 rounded-xl flex justify-center border border-slate-200 dark:border-slate-800">
+            <div id="transfer-preview-container" class="shadow-lg bg-white">
+                <!-- Aquí se clona el diseño del documento de traslado -->
+            </div>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <button onclick="closeTransferPreview()" class="px-4 py-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition text-xs font-semibold">
+                Cerrar Vista Previa
+            </button>
+            <button onclick="printFromTransferPreview()" class="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl transition text-xs font-bold shadow-md flex items-center gap-2">
+                <i class="fa-solid fa-print"></i> Imprimir Ahora
+            </button>
+        </div>
+    </div>
+</div>
+<!-- DOCUMENTO IMPRIMIBLE DE TRASLADO (DISEÑO CORPORATIVO 80MM) -->
+<div id="transfer-print-document" class="hidden" style="width: 80mm; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 11px; color: #0f172a; background: #ffffff; padding: 10px; box-sizing: border-box; line-height: 1.35;">
+    
+    <!-- Encabezado Corporativo -->
+    <div style="text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 8px; margin-bottom: 10px;">
+        <h2 style="font-size: 17px; font-weight: 900; margin: 0; letter-spacing: 1px; color: #0f172a;">BRAMY PARFUMS</h2>
+        <p style="margin: 2px 0 0 0; font-size: 9px; color: #475569; text-transform: uppercase; letter-spacing: 1.2px; font-weight: 600;">Gestión Logística e Inventarios</p>
+        <div style="background: #0f172a; color: #ffffff; font-size: 10px; font-weight: 800; padding: 4px 0; margin-top: 7px; letter-spacing: 0.8px; text-transform: uppercase; border-radius: 3px;">
+            REMISIÓN DE TRASLADO INTERNO
+        </div>
+    </div>
+
+    <!-- Bloque de Metadatos -->
+    <table style="width: 100%; font-size: 10px; border-collapse: collapse; margin-bottom: 8px; background: #f8fafc; border: 1px solid #cbd5e1;">
+        <tr>
+            <td style="padding: 4px 6px; border-bottom: 1px solid #e2e8f0; color: #475569;"><strong>Documento:</strong></td>
+            <td id="print-t-id" style="padding: 4px 6px; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: 800; font-family: monospace; font-size: 11px;">TR-000000</td>
+        </tr>
+        <tr>
+            <td style="padding: 4px 6px; border-bottom: 1px solid #e2e8f0; color: #475569;"><strong>Fecha / Hora:</strong></td>
+            <td id="print-t-date" style="padding: 4px 6px; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: 600;">--/--/---- --:--</td>
+        </tr>
+        <tr>
+            <td style="padding: 4px 6px; color: #475569;"><strong>Autorizado por:</strong></td>
+            <td id="print-t-user" style="padding: 4px 6px; text-align: right; font-weight: 600;">Administrador</td>
+        </tr>
+    </table>
+
+    <!-- Flujo de Bodega -> Almacén -->
+    <div style="border: 1px solid #0f172a; border-radius: 4px; padding: 6px; margin-bottom: 10px; background: #ffffff;">
+        <table style="width: 100%; border-collapse: collapse; text-align: center; font-size: 10px;">
+            <tr>
+                <td style="width: 44%; text-align: left;">
+                    <span style="font-size: 8px; color: #64748b; text-transform: uppercase; display: block; font-weight: 700;">ORIGEN</span>
+                    <strong style="font-size: 10.5px; color: #0f172a;">Bodega Central</strong>
+                </td>
+                <td style="width: 12%; font-size: 14px; font-weight: 900; color: #0f172a;">➔</td>
+                <td style="width: 44%; text-align: right;">
+                    <span style="font-size: 8px; color: #64748b; text-transform: uppercase; display: block; font-weight: 700;">DESTINO</span>
+                    <strong style="font-size: 10.5px; color: #0f172a;">Almacén Ventas</strong>
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    <!-- Tabla de Artículos Trasladados -->
+    <div style="margin-bottom: 8px;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 10px;">
+            <thead>
+                <tr style="border-top: 1.5px solid #0f172a; border-bottom: 1.5px solid #0f172a; background: #f1f5f9;">
+                    <th style="padding: 5px 4px; text-align: left; font-weight: 800; text-transform: uppercase; font-size: 9px;">Descripción / Ref.</th>
+                    <th style="padding: 5px 4px; text-align: center; font-weight: 800; text-transform: uppercase; font-size: 9px; width: 42px;">Cant.</th>
+                    <th style="padding: 5px 4px; text-align: right; font-weight: 800; text-transform: uppercase; font-size: 9px; width: 58px;">Saldos</th>
+                </tr>
+            </thead>
+            <tbody id="print-t-items-body">
+                <!-- Filas dinámicas generadas por JS -->
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Cuadro de Totales del Movimiento -->
+    <div style="border-top: 1.5px solid #0f172a; border-bottom: 1.5px solid #0f172a; padding: 5px 4px; margin-bottom: 8px; background: #f8fafc;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 10px;">
+            <tr>
+                <td style="color: #475569; font-weight: 600;">Total Referencias:</td>
+                <td id="print-t-total-refs" style="text-align: right; font-weight: 800;">0</td>
+            </tr>
+            <tr>
+                <td style="color: #0f172a; font-weight: 800; padding-top: 2px; font-size: 11px;">TOTAL UNIDADES TRASLADADAS:</td>
+                <td id="print-t-total-units" style="text-align: right; font-weight: 900; padding-top: 2px; font-size: 12px;">0</td>
+            </tr>
+        </table>
+    </div>
+
+    <!-- Observaciones / Motivo -->
+    <div style="font-size: 9.5px; margin-bottom: 14px; padding: 6px; border: 1px dashed #94a3b8; border-radius: 4px; background: #ffffff;">
+        <strong style="text-transform: uppercase; font-size: 8.5px; color: #475569; display: block; margin-bottom: 2px;">Observaciones / Motivo:</strong>
+        <span id="print-t-reason" style="color: #0f172a; font-weight: 500;">Reabastecimiento general de almacén</span>
+    </div>
+
+    <!-- Bloque de Firmas de Control -->
+    <table style="width: 100%; border-collapse: collapse; margin-top: 18px; font-size: 8.5px; text-align: center;">
+        <tr>
+            <td style="width: 47%; vertical-align: bottom; padding-right: 4px;">
+                <div style="border-top: 1px solid #0f172a; padding-top: 4px; font-weight: 800; color: #0f172a;">ENTREGÓ (BODEGA)</div>
+                <div style="color: #64748b; font-size: 8px; margin-top: 1px;">Firma / C.C.</div>
+            </td>
+            <td style="width: 6%;"></td>
+            <td style="width: 47%; vertical-align: bottom; padding-left: 4px;">
+                <div style="border-top: 1px solid #0f172a; padding-top: 4px; font-weight: 800; color: #0f172a;">RECIBIÓ (ALMACÉN)</div>
+                <div style="color: #64748b; font-size: 8px; margin-top: 1px;">Firma / C.C.</div>
+            </td>
+        </tr>
+    </table>
+
+    <!-- Pie de Página -->
+    <div style="text-align: center; font-size: 8px; color: #64748b; margin-top: 14px; border-top: 1px dashed #cbd5e1; padding-top: 6px;">
+        <div style="font-weight: 700; color: #334155;">POS Master • Sistema de Control Logístico</div>
+        <div>Documento interno de auditoría de inventario</div>
+    </div>
+</div>
+</script>
 
 <script>
-// Se ejecuta automáticamente al cargar la página y detecta cambios
-document.addEventListener("DOMContentLoaded", () => {
-    // Intentar renderizar si los datos ya están disponibles
-    intentarRenderizarBodega();
-});
+   let tempTransferItems = [];
 
+function openTransferModal(prodId = null) {
+    const modal = document.getElementById('transfer-modal');
+    const select = document.getElementById('transfer-product-select');
+    if (!modal || !select) return;
+
+    select.innerHTML = '<option value="">-- Seleccionar producto --</option>';
+    state.products.forEach(p => {
+        const stockB = p.stockBodega !== undefined ? p.stockBodega : (p.stock || 0);
+        select.innerHTML += `<option value="${p.id}">${p.name} (Bodega: ${stockB} unids)</option>`;
+    });
+
+    tempTransferItems = [];
+    if (prodId) {
+        const product = state.products.find(p => p.id === prodId);
+        if (product) {
+            tempTransferItems.push({
+                id: product.id,
+                name: product.name,
+                category: product.category || 'General',
+                stockBodega: product.stockBodega !== undefined ? product.stockBodega : (product.stock || 0),
+                qty: 1
+            });
+        }
+    }
+
+    document.getElementById('transfer-qty').value = 1;
+    document.getElementById('transfer-reason').value = '';
+    renderTransferItemsTable();
+    modal.classList.remove('hidden');
+}
+
+function closeTransferModal() {
+    const modal = document.getElementById('transfer-modal');
+    if (modal) modal.classList.add('hidden');
+    tempTransferItems = [];
+}
+
+function addTransferItemRow() {
+    const select = document.getElementById('transfer-product-select');
+    const qtyInput = document.getElementById('transfer-qty');
+    if (!select || !select.value) return alert('Selecciona un artículo.');
+
+    const prodId = parseInt(select.value);
+    const qty = parseInt(qtyInput.value) || 1;
+
+    const product = state.products.find(p => p.id === prodId);
+    if (!product) return;
+
+    const stockBodega = product.stockBodega !== undefined ? product.stockBodega : (product.stock || 0);
+    if (qty <= 0) return alert('Ingresa una cantidad válida.');
+
+    const existing = tempTransferItems.find(i => i.id === prodId);
+    const currentQtyInBatch = existing ? existing.qty : 0;
+
+    if ((qty + currentQtyInBatch) > stockBodega) {
+        return alert(`Stock insuficiente en bodega. Solo hay ${stockBodega} unidades disponibles.`);
+    }
+
+    if (existing) {
+        existing.qty += qty;
+    } else {
+        tempTransferItems.push({
+            id: product.id,
+            name: product.name,
+            category: product.category || 'General',
+            stockBodega: stockBodega,
+            qty: qty
+        });
+    }
+
+    select.value = '';
+    qtyInput.value = 1;
+    renderTransferItemsTable();
+}
+
+function renderTransferItemsTable() {
+    const tbody = document.getElementById('transfer-items-table-body');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    if (tempTransferItems.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="p-3 text-center text-slate-400">Sin artículos agregados al traslado</td></tr>';
+        return;
+    }
+
+    tempTransferItems.forEach((item, index) => {
+        tbody.innerHTML += `
+            <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition border-b border-slate-100 dark:border-slate-800">
+                <td class="p-2 font-bold text-slate-800 dark:text-white">${item.name}</td>
+                <td class="p-2 text-center font-semibold text-amber-600">${item.stockBodega}</td>
+                <td class="p-2 text-center font-bold text-emerald-600">${item.qty}</td>
+                <td class="p-2 text-center">
+                    <button onclick="removeTransferItem(${index})" class="text-rose-500 hover:text-rose-700 p-1"><i class="fa-solid fa-trash text-xs"></i></button>
+                </td>
+            </tr>
+        `;
+    });
+}
+
+function removeTransferItem(index) {
+    tempTransferItems.splice(index, 1);
+    renderTransferItemsTable();
+}
+
+function executeStockTransferAndPrint() {
+    if (!state.cashRegister.isOpen) return alert('La caja está cerrada. No se pueden realizar movimientos.');
+    if (tempTransferItems.length === 0) return alert('Agrega al menos un artículo para realizar el traslado.');
+
+    const reason = document.getElementById('transfer-reason').value.trim() || 'Reabastecimiento general de almacén';
+
+    // Validar stock disponible antes de ejecutar
+    for (let item of tempTransferItems) {
+        const product = state.products.find(p => p.id === item.id);
+        if (!product) return alert(`El producto ${item.name} ya no existe.`);
+        const currentBodega = product.stockBodega !== undefined ? product.stockBodega : (product.stock || 0);
+        if (item.qty > currentBodega) {
+            return alert(`Stock insuficiente para "${item.name}". Stock en bodega: ${currentBodega}, solicitado: ${item.qty}`);
+        }
+    }
+
+    // Procesar traslado y construir filas del comprobante
+    let rowsHtml = '';
+    let totalUnits = 0;
+
+    tempTransferItems.forEach(item => {
+        const product = state.products.find(p => p.id === item.id);
+        if (product) {
+            const prevBodega = product.stockBodega !== undefined ? product.stockBodega : (product.stock || 0);
+            const prevAlmacen = product.stockAlmacen || 0;
+
+            product.stockBodega = prevBodega - item.qty;
+            product.stockAlmacen = prevAlmacen + item.qty;
+            product.stock = product.stockBodega + product.stockAlmacen;
+
+            totalUnits += item.qty;
+
+            rowsHtml += `
+                <tr style="border-bottom: 1px dashed #cbd5e1;">
+                    <td style="padding: 5px 4px; vertical-align: top;">
+                        <div style="font-weight: 700; color: #0f172a; line-height: 1.2;">${product.name}</div>
+                        <div style="font-size: 8.5px; color: #64748b; margin-top: 2px;">Cat: ${product.category || 'General'}</div>
+                    </td>
+                    <td style="padding: 5px 4px; text-align: center; vertical-align: middle; font-weight: 900; font-size: 11px; color: #0f172a;">
+                        ${item.qty}
+                    </td>
+                    <td style="padding: 5px 4px; text-align: right; vertical-align: top; font-size: 8.5px; line-height: 1.25;">
+                        <div style="color: #475569;">Bod: <strong>${product.stockBodega}</strong></div>
+                        <div style="color: #0f172a;">Alm: <strong>${product.stockAlmacen}</strong></div>
+                    </td>
+                </tr>
+            `;
+        }
+    });
+
+    saveData();
+    refreshAllUI();
+    closeTransferModal();
+
+    // Asignar metadatos al documento imprimible
+    const transferCode = `TR-${Math.floor(100000 + Math.random() * 900000)}`;
+    const nowFormatted = new Date().toLocaleString('es-CO', {
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', hour12: true
+    });
+    const currentUser = (state.cashRegister && state.cashRegister.cashier) ? state.cashRegister.cashier : 'Administrador';
+
+    document.getElementById('print-t-id').innerText = transferCode;
+    document.getElementById('print-t-date').innerText = nowFormatted;
+    document.getElementById('print-t-user').innerText = currentUser;
+    document.getElementById('print-t-items-body').innerHTML = rowsHtml;
+    document.getElementById('print-t-total-refs').innerText = tempTransferItems.length;
+    document.getElementById('print-t-total-units').innerText = `${totalUnits} unids.`;
+    document.getElementById('print-t-reason').innerText = reason;
+
+    // Mostrar y lanzar impresión
+    const printDoc = document.getElementById('transfer-print-document');
+    printDoc.classList.remove('hidden');
+
+    setTimeout(() => {
+        window.print();
+        printDoc.classList.add('hidden');
+        alert(`¡Traslado ${transferCode} registrado e impreso con éxito!`);
+        tempTransferItems = [];
+    }, 150);
+}
 function intentarRenderizarBodega() {
     const productos = obtenerListaProductos();
     if (productos.length > 0) {
@@ -1034,17 +1402,22 @@ function renderBodega() {
                     </span>
                 </td>
                 <td class="p-3 md:p-4 text-center">
-                    <button onclick="openBodegaModal('${id}')" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs transition shadow-sm flex items-center gap-1.5 mx-auto">
-                        <i class="fa-solid fa-pen-to-square"></i> Editar Stock
-                    </button>
+                   <td class="p-3 md:p-4 text-center space-x-1 flex justify-center items-center gap-1">
+        <button onclick="openBodegaModal(${p.id})" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs transition shadow-sm flex items-center gap-1.5">
+            <i class="fa-solid fa-pen-to-square"></i> Editar
+        </button>
+        <button onclick="openTransferModal(${p.id})" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition shadow-sm flex items-center gap-1.5">
+            <i class="fa-solid fa-right-left"></i> Trasladar
+        </button>
                 </td>
             </tr>
         `;
     });
 }
 
+
 </script>
-    <!-- MODAL DE EDICIÓN DE STOCK EN BODEGA -->
+<!-- MODAL DE EDICIÓN DE STOCK EN BODEGA -->
 <div id="bodega-modal" class="fixed inset-0 bg-slate-900/50 hidden flex items-center justify-center p-4 z-50">
     <div class="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
         <h3 id="modal-bodega-title" class="text-lg font-bold text-slate-800">Editar Perfume en Bodega</h3>
@@ -1800,13 +2173,7 @@ function renderBodega() {
     <div>
         <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Plazo Proveedor (Días)</label>
         <input type="number" id="inv-credit-days" min="0" max="365" value="30" class="w-full px-4 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-semibold">
-            <option value="0">Contado (0 días)</option>
-            <option value="8">8 Días</option>
-            <option value="15">15 Días</option>
-            <option value="30" selected>30 Días</option>
-            <option value="45">45 Días</option>
-            <option value="60">60 Días</option>
-            <option value="90">90 Días</option>
+           
         </select>
     </div>
 </div>
@@ -2527,11 +2894,26 @@ function listenRealtimeDatabase() {
         if (doc.exists) {
             const cloudData = doc.data();
             const cloudTime = new Date(cloudData.lastUpdated || 0).getTime();
-            const localTime = new Date(localStorage.getItem('pos_last_updated') || 0).getTime();
+            
+            // Obtener o inicializar la marca de tiempo local de forma segura
+            let localTimeString = localStorage.getItem('pos_last_updated');
+            if (!localTimeString) {
+                localTimeString = new Date().toISOString();
+                localStorage.setItem('pos_last_updated', localTimeString);
+            }
+            const localTime = new Date(localTimeString).getTime();
 
-            // Sincronizar desde la nube SOLO si la nube es estrictamente más reciente
-            if (cloudTime > localTime) {
-                state.products = cloudData.products || state.products;
+            // Solo actualizar desde la nube si la nube es estrictamente más nueva
+            // y si los productos de la nube no vienen vacíos (protección anti-borrado)
+            if (cloudTime > localTime && cloudData.products && cloudData.products.length > 0) {
+                
+                state.products = cloudData.products.map(cloudProd => {
+                    cloudProd.stockBodega = cloudProd.stockBodega !== undefined ? Number(cloudProd.stockBodega) || 0 : 0;
+                    cloudProd.stockAlmacen = cloudProd.stockAlmacen !== undefined ? Number(cloudProd.stockAlmacen) || 0 : (cloudProd.stock !== undefined ? Number(cloudProd.stock) || 0 : 0);
+                    cloudProd.stock = cloudProd.stockBodega + cloudProd.stockAlmacen;
+                    return cloudProd;
+                });
+
                 state.sales = cloudData.sales || state.sales;
                 state.clients = cloudData.clients || state.clients;
                 state.accounts = cloudData.accounts || state.accounts;
@@ -2552,17 +2934,17 @@ function listenRealtimeDatabase() {
                 localStorage.setItem('pos_last_updated', cloudData.lastUpdated);
 
                 refreshAllUI();
-                console.log("Datos sincronizados con éxito desde la nube.");
+                console.log("Sincronización remota aplicada protegiendo el stock.");
             }
         }
     }, (error) => {
-        console.error("Error al escuchar en tiempo real:", error);
+        console.error("Error en tiempo real (trabajando con datos locales seguros):", error);
     });
 }
 async function saveData() {
     const timestamp = new Date().toISOString();
     
-    // 1. Guardar localmente junto con la marca de tiempo
+    // 1. Guardar marcas y datos localmente de forma inmediata
     localStorage.setItem('pos_products', JSON.stringify(state.products));
     localStorage.setItem('pos_sales', JSON.stringify(state.sales));
     localStorage.setItem('pos_clients', JSON.stringify(state.clients));
@@ -2571,9 +2953,9 @@ async function saveData() {
     localStorage.setItem('pos_payables', JSON.stringify(state.payables));
     localStorage.setItem('pos_cash', JSON.stringify(state.cashRegister));
     localStorage.setItem('pos_cash_history', JSON.stringify(state.cashHistory));
-    localStorage.setItem('pos_last_updated', timestamp);
+    localStorage.setItem('pos_last_updated', timestamp); // 👈 Sella el tiempo local como más reciente
 
-    // 2. Enviar a Firebase Firestore con la marca de tiempo exacta
+    // 2. Subir a Firestore
     try {
         await db.collection("pos_database").doc("main_data").set({
             products: state.products,
@@ -2586,9 +2968,9 @@ async function saveData() {
             cashHistory: state.cashHistory,
             lastUpdated: timestamp
         });
-        console.log("Datos guardados y subidos a la nube correctamente.");
+        console.log("Stock guardado y respaldado en la nube correctamente.");
     } catch (error) {
-        console.error("Error al guardar en Firebase:", error);
+        console.error("Error al subir a Firebase (los datos locales siguen seguros en el navegador):", error);
     }
 }
 
@@ -2690,6 +3072,7 @@ async function saveData() {
             renderProviderCards();
             renderClients();
             renderReports();
+            renderProductAnalytics();
             updateAccountSelects();
             updateClientsDatalist();
         }
@@ -2706,6 +3089,7 @@ async function saveData() {
 
 // Variable global para almacenar el temporizador del banner
 let bannerTimeout = null;
+
 
 function switchTab(tab) {
     // 🔒 PROTECCIÓN DE MÓDULOS CON PIN 1234
@@ -3083,8 +3467,7 @@ function sendPaymentReceiptWhatsApp(client, amountPaid, previousDebt, remainingD
 
     window.open(url, '_blank');
 }
-
-    function renderPOSProducts(filter = '') {
+function renderPOSProducts(filter = '') {
             const grid = document.getElementById('pos-product-grid');
             if (!grid) return;
             grid.innerHTML = '';
@@ -3095,26 +3478,23 @@ function sendPaymentReceiptWhatsApp(client, amountPaid, previousDebt, remainingD
                 return;
             }
 
-            // Agrupar unificando variantes de nombres (mayúsculas/minúsculas/espacios)
+            // Agrupar unificando variantes de nombres
             const grouped = {};
-            const categoryDisplayNames = {}; // Guarda la versión bien formateada para mostrar
+            const categoryDisplayNames = {};
 
             filtered.forEach(p => {
                 const rawCat = (p.category && p.category.trim()) ? p.category.trim() : 'General';
-                // Llave normalizada en minúsculas para unificar variantes
                 const key = rawCat.toLowerCase();
 
                 if (!grouped[key]) {
                     grouped[key] = [];
-                    categoryDisplayNames[key] = rawCat.toUpperCase(); // Nombre unificado en mayúsculas
+                    categoryDisplayNames[key] = rawCat.toUpperCase();
                 }
                 grouped[key].push(p);
             });
 
-            // Ordenar las categorías alfabéticamente
             const sortedKeys = Object.keys(grouped).sort((a, b) => categoryDisplayNames[a].localeCompare(categoryDisplayNames[b]));
 
-            // Renderizar cada grupo unificado con su divisor de categoría
             sortedKeys.forEach(key => {
                 const displayName = categoryDisplayNames[key];
 
@@ -3127,15 +3507,29 @@ function sendPaymentReceiptWhatsApp(client, amountPaid, previousDebt, remainingD
                 `;
 
                 grouped[key].forEach(p => {
+                    // Obtener de forma segura los stocks de bodega y almacén
+                    const stockBodega = p.stockBodega !== undefined ? Number(p.stockBodega) : 0;
+                    const stockAlmacen = p.stockAlmacen !== undefined ? Number(p.stockAlmacen) : (p.stock || 0);
+
                     grid.innerHTML += `
                         <div onclick="addToCart(${p.id})" class="bg-slate-50 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 p-2.5 md:p-4 rounded-xl cursor-pointer transition flex flex-col justify-between active:scale-95">
                             <div>
                                 <span class="text-[10px] font-semibold text-emerald-600 uppercase block">${p.category || 'General'}</span>
                                 <h4 class="font-bold text-slate-800 text-xs md:text-sm mt-0.5 line-clamp-2">${p.name}</h4>
                             </div>
-                            <div class="flex justify-between items-center mt-2 pt-1 border-t border-slate-100">
-                                <span class="font-bold text-slate-900 text-xs md:text-sm">${formatCOP(p.price)}</span>
-                                <span class="text-[10px] md:text-xs text-slate-500">Stock: ${p.stock}</span>
+                            <div class="mt-2 pt-1 border-t border-slate-100 space-y-1">
+                                <div class="flex justify-between items-center text-[11px]">
+                                    <span class="text-slate-500"><i class="fa-solid fa-warehouse text-amber-500"></i> Bodega:</span>
+                                    <span class="font-bold text-amber-600">${stockBodega}</span>
+                                </div>
+                                <div class="flex justify-between items-center text-[11px]">
+                                    <span class="text-slate-500"><i class="fa-solid fa-store text-blue-500"></i> Almacén:</span>
+                                    <span class="font-bold text-blue-600">${stockAlmacen}</span>
+                                </div>
+                                <div class="flex justify-between items-center pt-1 border-t border-dashed border-slate-200">
+                                    <span class="font-bold text-slate-900 text-xs md:text-sm">${formatCOP(p.price)}</span>
+                                    <span class="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">Tot: ${p.stock}</span>
+                                </div>
                             </div>
                         </div>
                     `;
@@ -3385,7 +3779,21 @@ function clearCart() {
     renderCartTabs();
     renderCart();
 }
-       function checkout(method) {
+ // --- CORRECCIÓN ESTRICTA: SINCRONIZACIÓN ÚNICA DE STOCK ENTRE POS E INVENTARIO ---
+
+// 1. Inicialización limpia y exacta al cargar el estado (evita que el stock se multiplique)
+state.products = (JSON.parse(localStorage.getItem('pos_products')) || []).map(p => {
+    // Normalizar bodega y almacén de forma segura
+    p.stockBodega = p.stockBodega !== undefined ? Number(p.stockBodega) || 0 : 0;
+    p.stockAlmacen = p.stockAlmacen !== undefined ? Number(p.stockAlmacen) || 0 : (p.stock !== undefined ? Number(p.stock) || 0 : 0);
+    
+    // El stock total es la suma fija y exacta de ambos módulos
+    p.stock = p.stockBodega + p.stockAlmacen;
+    return p;
+});
+
+// 2. Proceso de venta (Descuenta estrictamente del stock solo al vender)
+function checkout(method) {
     if (state.cart.length === 0) return alert('El carrito está vacío.');
     if (!state.cashRegister.isOpen) return alert('Debes abrir la caja antes de registrar ventas.');
 
@@ -3399,9 +3807,8 @@ function clearCart() {
 
     const subtotal = state.cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
     const discount = activeCart.discount || 0;
-    const total = Math.max(0, subtotal - discount); // Total real con descuento aplicado
+    const total = Math.max(0, subtotal - discount);
 
-    // MANEJO DE VENTA A CRÉDITO
     if (method === 'Crédito') {
         if (!clientNameInput || clientName === 'Cliente Ocasional') {
             return alert('Debes ingresar el nombre del cliente para registrar una venta a crédito.');
@@ -3409,20 +3816,26 @@ function clearCart() {
         
         let client = state.clients.find(c => c.name.toLowerCase() === clientName.toLowerCase());
         if (!client) {
-            client = { id: Date.now(), name: clientName, phone: 'Sin Teléfono', debt: total };
+            client = { id: Date.now(), name: clientName, phone: '3000000000', debt: total };
             state.clients.push(client);
         } else {
             client.debt = (client.debt || 0) + total;
         }
     } else {
-        // Actualizar saldo de la cuenta receptora con el total real
         account.balance += total;
     }
 
-    // Descontar inventario solo en el momento de registrar la venta
+    // 🔴 DESCUENTO ESTRICTO DE INVENTARIO ÚNICAMENTE AL VENDER
     state.cart.forEach(item => {
         const product = state.products.find(p => p.id === item.id);
-        if (product) product.stock -= item.qty;
+        if (product) {
+            // Descuenta exactamente la cantidad vendida
+            product.stock = Math.max(0, (Number(product.stock) || 0) - Number(item.qty));
+            // Sincronizar también el almacén de ventas
+            if (product.stockAlmacen !== undefined) {
+                product.stockAlmacen = Math.max(0, product.stockAlmacen - Number(item.qty));
+            }
+        }
     });
 
     const newSale = {
@@ -3440,7 +3853,7 @@ function clearCart() {
     state.sales.unshift(newSale);
     saveData();
 
-    alert(`Venta registrada exitosamente por ${formatCOP(total)} (Descuento aplicado: ${formatCOP(discount)})`);
+    alert(`¡Venta registrada con éxito por ${formatCOP(total)}! Stock actualizado.`);
     clearCart();
     document.getElementById('cart-client-name').value = '';
     refreshAllUI();
@@ -3564,12 +3977,12 @@ function saveInventoryInline(productId) {
     const product = state.products.find(p => p.id === productId);
     if (!product) return alert('Producto no encontrado en el inventario.');
 
-    // Actualizar los datos del producto (incluyendo la nueva categoría)
+    // Actualizar datos y sincronizar stockAlmacen para que al refrescar no se sobrescriba
     product.category = newCategory;
     product.price = newPrice;
     product.stock = newStock;
+    product.stockAlmacen = Math.max(0, newStock - (product.stockBodega || 0));
 
-    // Guardar cambios y actualizar la interfaz (el POS agrupará el artículo en su nueva categoría de inmediato)
     saveData();
     refreshAllUI();
 
@@ -3599,11 +4012,12 @@ function saveInventoryInline(productId) {
             document.getElementById('product-modal').classList.add('hidden');
         }
 
-       function saveProduct() {
+     function saveProduct() {
     if (!state.cashRegister.isOpen) return alert('La caja está cerrada. No se pueden realizar modificaciones.');
     const id = document.getElementById('prod-id').value;
     const name = document.getElementById('prod-name').value.trim();
     const category = document.getElementById('prod-category').value.trim();
+    const barcode = document.getElementById('prod-barcode').value.trim();
     const price = parseFloat(document.getElementById('prod-price').value);
     const stock = parseInt(document.getElementById('prod-stock').value);
 
@@ -3614,16 +4028,21 @@ function saveInventoryInline(productId) {
         if (p) {
             p.name = name;
             p.category = category || 'General';
+            p.barcode = barcode;
             p.price = price;
             p.stock = stock;
+            p.stockAlmacen = Math.max(0, stock - (p.stockBodega || 0));
         }
     } else {
         state.products.push({
             id: Date.now(),
             name: name,
             category: category || 'General',
+            barcode: barcode,
             price: price,
-            stock: stock
+            stock: stock,
+            stockBodega: 0,
+            stockAlmacen: stock
         });
     }
 
@@ -4289,11 +4708,10 @@ function updateInvoiceItemValue(index, field, newValue) {
     renderInvoiceItemsTable();
 }
 
-// 5. Guardar cambios en la factura y actualizar inventario
+/// 3. Proceso de Factura de Compra (Suma estrictamente al stock solo al comprar)
 function saveInvoice() {
     if (!state.cashRegister.isOpen) return alert('La caja está cerrada. No se pueden realizar modificaciones.');
     
-    const editId = document.getElementById('inv-edit-id').value;
     const invNum = document.getElementById('inv-num').value.trim();
     const providerId = parseInt(document.getElementById('inv-provider').value);
     const total = parseFloat(document.getElementById('inv-total').value) || 0;
@@ -4305,28 +4723,6 @@ function saveInvoice() {
 
     const provider = state.providers.find(p => p.id === providerId);
     const providerName = provider ? provider.name : 'General';
-    const creditDays = parseInt(document.getElementById('inv-credit-days').value) || 30;
-
-    if (editId) {
-        const existingInvoice = state.payables.find(p => p.id === parseInt(editId));
-        if (existingInvoice) {
-            updateInventoryFromEditedInvoice(existingInvoice.items, tempInvoiceItems);
-
-            existingInvoice.num = invNum;
-            existingInvoice.providerId = providerId;
-            existingInvoice.providerName = providerName;
-            existingInvoice.total = total;
-            existingInvoice.balance = total - (existingInvoice.paid || 0);
-            existingInvoice.status = existingInvoice.balance <= 0 ? 'Pagada' : (existingInvoice.paid > 0 ? 'Parcial' : 'Pendiente');
-            existingInvoice.items = [...tempInvoiceItems];
-            
-            saveData();
-            closeInvoiceModal();
-            refreshAllUI();
-            alert('¡Factura de compra, precios y stock actualizados en Inventario y POS!');
-            return;
-        }
-    }
 
     if (initialPaid > 0 && !accountId) return alert('Selecciona una cuenta de salida para el abono inicial.');
 
@@ -4341,13 +4737,17 @@ function saveInvoice() {
     const balanceDue = total - initialPaid;
     const status = balanceDue <= 0 ? 'Pagada' : (initialPaid > 0 ? 'Parcial' : 'Pendiente');
 
+    // 🟢 SUMA EXACTA AL INVENTARIO ÚNICAMENTE AL COMPRAR
     tempInvoiceItems.forEach(item => {
         let prod = state.products.find(p => p.name.trim().toLowerCase() === item.name.trim().toLowerCase());
         
         if (prod) {
-            prod.stock += item.qty;
+            prod.stock = (Number(prod.stock) || 0) + Number(item.qty);
+            if (prod.stockAlmacen !== undefined) {
+                prod.stockAlmacen += Number(item.qty);
+            }
             if (item.price !== undefined && !isNaN(item.price) && item.price > 0) {
-                prod.price = item.price;
+                prod.price = Number(item.price);
             }
         } else {
             state.products.push({
@@ -4355,8 +4755,10 @@ function saveInvoice() {
                 name: item.name.trim(),
                 category: 'General',
                 barcode: '',
-                price: item.price || 0,
-                stock: item.qty
+                price: Number(item.price) || 0,
+                stock: Number(item.qty),
+                stockBodega: 0,
+                stockAlmacen: Number(item.qty)
             });
         }
     });
@@ -4379,7 +4781,7 @@ function saveInvoice() {
     saveData();
     closeInvoiceModal();
     refreshAllUI();
-    alert('¡Factura de compra registrada con éxito!');
+    alert('¡Factura de compra registrada y stock sincronizado correctamente en inventario y POS!');
 }
         function closeInvoiceModal() {
             document.getElementById('invoice-modal').classList.add('hidden');
@@ -4577,27 +4979,21 @@ function saveInvoice() {
     refreshAllUI();
     alert('¡Factura de compra registrada y stock sincronizado correctamente!');
 }
-
-// FUNCIÓN AUXILIAR BLINDADA PARA RECALCULAR STOCK AL EDITAR
+// Función auxiliar para recalcular el stock al editar facturas sin crear duplicados
 function updateInventoryFromEditedInvoice(oldItems, newItems) {
-    // 1. Descontar las cantidades viejas que se habían sumado antes
     if (oldItems && Array.isArray(oldItems)) {
         oldItems.forEach(oldItem => {
-            const prod = state.products.find(p => p.name.trim().toLowerCase() === oldItem.name.trim().toLowerCase());
+            const prod = state.products.find(p => p.id === oldItem.id || p.name.trim().toLowerCase() === oldItem.name.trim().toLowerCase());
             if (prod) {
                 prod.stock = Math.max(0, (Number(prod.stock) || 0) - (Number(oldItem.qty) || 0));
             }
         });
     }
 
-    // 2. Sumar únicamente las cantidades nuevas de la edición actual
     newItems.forEach(newItem => {
-        const prod = state.products.find(p => p.name.trim().toLowerCase() === newItem.name.trim().toLowerCase());
+        const prod = state.products.find(p => p.id === newItem.id || p.name.trim().toLowerCase() === newItem.name.trim().toLowerCase());
         if (prod) {
             prod.stock = (Number(prod.stock) || 0) + (Number(newItem.qty) || 0);
-            if (newItem.price !== undefined && !isNaN(newItem.price) && newItem.price > 0) {
-                prod.price = Number(newItem.price);
-            }
         } else {
             state.products.push({
                 id: Date.now() + Math.random(),
@@ -4606,39 +5002,6 @@ function updateInventoryFromEditedInvoice(oldItems, newItems) {
                 barcode: '',
                 price: Number(newItem.price) || 0,
                 stock: Number(newItem.qty) || 0
-            });
-        }
-    });
-}
-
-// FUNCIÓN AUXILIAR PARA RECALCULAR STOCK SI SE EDITA UNA FACTURA EXISTENTE
-function updateInventoryFromEditedInvoice(oldItems, newItems) {
-    // Revertir cantidades viejas
-    if (oldItems && Array.isArray(oldItems)) {
-        oldItems.forEach(oldItem => {
-            const prod = state.products.find(p => p.name.trim().toLowerCase() === oldItem.name.trim().toLowerCase());
-            if (prod) {
-                prod.stock = Math.max(0, prod.stock - oldItem.qty);
-            }
-        });
-    }
-
-    // Aplicar cantidades y precios nuevos
-    newItems.forEach(newItem => {
-        const prod = state.products.find(p => p.name.trim().toLowerCase() === newItem.name.trim().toLowerCase());
-        if (prod) {
-            prod.stock += newItem.qty;
-            if (newItem.price !== undefined && !isNaN(newItem.price) && newItem.price > 0) {
-                prod.price = newItem.price;
-            }
-        } else {
-            state.products.push({
-                id: Date.now() + Math.random(),
-                name: newItem.name.trim(),
-                category: 'General',
-                barcode: '',
-                price: newItem.price || 0,
-                stock: newItem.qty
             });
         }
     });
@@ -5073,8 +5436,11 @@ function renderStatistics() {
     document.getElementById('stat-total-income').innerText = formatCOP(totalEfectivo);
     document.getElementById('stat-total-bancos').innerText = formatCOP(totalBancos);
     document.getElementById('stat-total-cartera').innerText = formatCOP(totalCartera);
-    document.getElementById('stat-total-expenses').innerText = formatCOP(totalPayables); // <--- Tarjeta actualizada
-    document.getElementById('stat-total-trans').innerText = totalTransacciones;
+    document.getElementById('stat-total-expenses').innerText = formatCOP(totalPayables); 
+   document.getElementById('stat-total-expenses').innerText = formatCOP(totalPayables);
+document.getElementById('stat-total-trans').innerText = totalTransacciones;
+
+renderProductAnalytics(); // <--- AGREGAR ESTA LÍNEA AQUÍ
 
     // ... (el resto del código de gráficos y estadísticas continúa igual)        
 
@@ -5676,42 +6042,7 @@ function openProductModal(id = null) {
     }
 }
 
-// Al guardar el producto
-function saveProduct() {
-    if (!state.cashRegister.isOpen) return alert('La caja está cerrada. No se pueden realizar modificaciones.');
-    const id = document.getElementById('prod-id').value;
-    const name = document.getElementById('prod-name').value.trim();
-    const category = document.getElementById('prod-category').value.trim();
-    const barcode = document.getElementById('prod-barcode').value.trim(); // <--- NUEVO
-    const price = parseFloat(document.getElementById('prod-price').value);
-    const stock = parseInt(document.getElementById('prod-stock').value);
 
-    if (!name || isNaN(price) || isNaN(stock)) return alert('Por favor completa todos los campos requeridos.');
-
-    if (id) {
-        const p = state.products.find(prod => prod.id === parseInt(id));
-        if (p) {
-            p.name = name;
-            p.category = category || 'General';
-            p.barcode = barcode; // <--- NUEVO
-            p.price = price;
-            p.stock = stock;
-        }
-    } else {
-        state.products.push({
-            id: Date.now(),
-            name: name,
-            category: category || 'General',
-            barcode: barcode, // <--- NUEVO
-            price: price,
-            stock: stock
-        });
-    }
-
-    saveData();
-    closeProductModal();
-    refreshAllUI();
-}
  // Variable de control para saber si estamos escaneando para el inventario
 let isScanningForInventory = false;
 
@@ -5862,17 +6193,16 @@ function saveEditedBillingInvoice() {
     if (type === 'VENTA') {
         const sale = state.sales.find(s => s.id === rawId);
         if (sale) {
-            // 1. REVERTIR EL STOCK ANTERIOR (Devuelve las cantidades viejas al inventario de forma segura)
             if (sale.items && Array.isArray(sale.items)) {
                 sale.items.forEach(oldItem => {
                     const prod = state.products.find(p => p.id === oldItem.id || p.name.trim().toLowerCase() === oldItem.name.trim().toLowerCase());
                     if (prod) {
                         prod.stock += Number(oldItem.qty) || 0; 
+                        prod.stockAlmacen = (prod.stockAlmacen !== undefined ? prod.stockAlmacen : 0) + (Number(oldItem.qty) || 0);
                     }
                 });
             }
 
-            // 2. APLICAR EXCLUSIVAMENTE LOS NUEVOS CAMBIOS DE LA EDICIÓN
             sale.date = date;
             sale.clientName = party;
             sale.method = method;
@@ -5880,31 +6210,25 @@ function saveEditedBillingInvoice() {
             sale.items = tempEditBillingItems.map(i => {
                 const prod = state.products.find(p => p.id === i.id || p.name.trim().toLowerCase() === i.name.trim().toLowerCase());
                 if (prod) {
-                    // Resta únicamente la nueva cantidad editada limpiamente
                     prod.stock = Math.max(0, prod.stock - Number(i.qty)); 
+                    prod.stockAlmacen = Math.max(0, (prod.stockAlmacen !== undefined ? prod.stockAlmacen : prod.stock) - Number(i.qty));
                 }
-                return {
-                    id: i.id,
-                    name: i.name,
-                    qty: Number(i.qty),
-                    price: Number(i.price)
-                };
+                return { id: i.id, name: i.name, qty: Number(i.qty), price: Number(i.price) };
             });
         }
     } else if (type === 'COMPRA') {
         const payable = state.payables.find(p => p.id === rawId);
         if (payable) {
-            // 1. REVERTIR EL STOCK ANTERIOR DE LA COMPRA (Descuenta el stock viejo mal sumado)
             if (payable.items && Array.isArray(payable.items)) {
                 payable.items.forEach(oldItem => {
                     const prod = state.products.find(p => p.name.trim().toLowerCase() === oldItem.name.trim().toLowerCase());
                     if (prod) {
                         prod.stock = Math.max(0, prod.stock - Number(oldItem.qty));
+                        prod.stockAlmacen = Math.max(0, (prod.stockAlmacen !== undefined ? prod.stockAlmacen : prod.stock) - Number(oldItem.qty));
                     }
                 });
             }
 
-            // 2. APLICAR EXCLUSIVAMENTE LOS NUEVOS CAMBIOS
             payable.date = date;
             payable.providerName = party;
             payable.status = method;
@@ -5914,6 +6238,7 @@ function saveEditedBillingInvoice() {
                 const prod = state.products.find(p => p.id === i.id || p.name.trim().toLowerCase() === i.name.trim().toLowerCase());
                 if (prod) {
                     prod.stock += Number(i.qty); 
+                    prod.stockAlmacen = (prod.stockAlmacen !== undefined ? prod.stockAlmacen : 0) + Number(i.qty);
                     if (i.price > 0) prod.price = Number(i.price);
                 } else {
                     state.products.push({
@@ -5922,16 +6247,12 @@ function saveEditedBillingInvoice() {
                         category: 'General',
                         barcode: '',
                         price: Number(i.price) || 0,
-                        stock: Number(i.qty)
+                        stock: Number(i.qty),
+                        stockBodega: 0,
+                        stockAlmacen: Number(i.qty)
                     });
                 }
-                return {
-                    id: i.id,
-                    name: i.name,
-                    qty: Number(i.qty),
-                    cost: Number(i.price),
-                    price: Number(i.price)
-                };
+                return { id: i.id, name: i.name, qty: Number(i.qty), cost: Number(i.price), price: Number(i.price) };
             });
         }
     }
@@ -5941,7 +6262,7 @@ function saveEditedBillingInvoice() {
     closeEditBillingModal();
     refreshAllUI();
     
-    alert('¡Factura modificada con éxito y stock sincronizado sin duplicar elementos!');
+    alert('¡Factura modificada con éxito y stock sincronizado correctamente!');
 }
 // 2. Agregar ítem seleccionado validando el ID de inventario
 function addSelectedInventoryToEditBilling() {
@@ -6615,7 +6936,10 @@ function renderClientAnalytics() {
         `;
     });
 }
-// FUNCIÓN PARA CALCULAR Y RENDERIZAR EL TOP DE PRODUCTOS (FRECUENCIA Y VOLUMEN)
+// =========================================================================
+// PANELES ANALÍTICOS 100% FUNCIONALES: PRODUCTOS FRECUENTES Y MAYOR VOLUMEN
+// =========================================================================
+
 function renderProductAnalytics() {
     const frequentBody = document.getElementById('top-frequent-products-body');
     const volumeBody = document.getElementById('top-volume-products-body');
@@ -6626,19 +6950,24 @@ function renderProductAnalytics() {
 
     const productStats = {};
 
-    // Procesar todas las ventas registradas en state.sales (Efectivo, Transferencia, Crédito)
-    state.sales.forEach(s => {
-        const isAbono = s.method && (s.method.includes('Abono') || s.method === 'Abono a Crédito');
-        if (isAbono) return; // Omitir registros de abono que no son venta directa de inventario
+    // Recorrer todas las ventas válidas (excluyendo abonos de cartera)
+    (state.sales || []).forEach(s => {
+        const method = (s.method || '').toLowerCase();
+        if (method.includes('abono')) return;
 
-        if (s.items && Array.isArray(s.items)) {
+        if (Array.isArray(s.items)) {
             s.items.forEach(item => {
-                const name = (item.name || 'Producto').trim();
+                const name = (item.name || 'Producto sin nombre').trim();
+                const qty = Number(item.qty) || 0;
+                const price = Number(item.price) || 0;
+
+                if (qty <= 0) return;
+
                 if (!productStats[name]) {
                     productStats[name] = { qty: 0, totalRevenue: 0 };
                 }
-                productStats[name].qty += (item.qty || 0);
-                productStats[name].totalRevenue += ((item.price || 0) * (item.qty || 0));
+                productStats[name].qty += qty;
+                productStats[name].totalRevenue += (price * qty);
             });
         }
     });
@@ -6650,28 +6979,29 @@ function renderProductAnalytics() {
     }));
 
     if (statsArray.length === 0) {
-        frequentBody.innerHTML = '<tr><td colspan="3" class="p-3 text-center text-slate-400">Sin datos de ventas de productos</td></tr>';
-        volumeBody.innerHTML = '<tr><td colspan="3" class="p-3 text-center text-slate-400">Sin datos de ventas de productos</td></tr>';
+        const emptyRow = '<tr><td colspan="3" class="p-4 text-center text-slate-400">Aún no hay ventas de productos registradas</td></tr>';
+        frequentBody.innerHTML = emptyRow;
+        volumeBody.innerHTML = emptyRow;
         return;
     }
 
-    // 1. Top Frecuencia (Ordenado por mayor cantidad de unidades vendidas)
-    const sortedByFreq = [...statsArray].sort((a, b) => b.qty - a.qty).slice(0, 5);
+    // 1. Panel: Productos Más Frecuentes (Ordenado por Unidades Vendidas)
+    const sortedByFreq = [...statsArray].sort((a, b) => b.qty - a.qty).slice(0, 10);
     sortedByFreq.forEach((p, idx) => {
-        let badge = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx + 1}.`;
+        const badge = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx + 1}.`;
         frequentBody.innerHTML += `
             <tr class="hover:bg-slate-50 transition">
                 <td class="p-2.5 font-bold text-slate-800">${badge} ${p.name}</td>
-                <td class="p-2.5 text-center font-semibold text-emerald-600">${p.qty} unids.</td>
+                <td class="p-2.5 text-center font-bold text-emerald-600">${p.qty} unids.</td>
                 <td class="p-2.5 text-right font-bold text-slate-900">${formatCOP(p.totalRevenue)}</td>
             </tr>
         `;
     });
 
-    // 2. Top Volumen (Ordenado por mayor dinero recaudado en ventas)
-    const sortedByVol = [...statsArray].sort((a, b) => b.totalRevenue - a.totalRevenue).slice(0, 5);
+    // 2. Panel: Productos que Más Dinero Generan (Ordenado por Volumen $)
+    const sortedByVol = [...statsArray].sort((a, b) => b.totalRevenue - a.totalRevenue).slice(0, 10);
     sortedByVol.forEach((p, idx) => {
-        let badge = idx === 0 ? '👑' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx + 1}.`;
+        const badge = idx === 0 ? '👑' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx + 1}.`;
         volumeBody.innerHTML += `
             <tr class="hover:bg-slate-50 transition">
                 <td class="p-2.5 font-bold text-slate-800">${badge} ${p.name}</td>
