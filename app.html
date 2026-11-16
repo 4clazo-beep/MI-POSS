@@ -17,8 +17,7 @@
   firebase.initializeApp(firebaseConfig);
   const db = firebase.firestore();
 let state = {
-    // Dentro de let state = { ... }
-transfers: JSON.parse(localStorage.getItem('pos_transfers')) || [],
+    
     products: (JSON.parse(localStorage.getItem('pos_products')) || []).map(p => {
         // Preservar estrictamente el stock real existente sin reasignaciones fantasma
         p.stockBodega = p.stockBodega !== undefined ? Number(p.stockBodega) || 0 : 0;
@@ -68,18 +67,36 @@ function resetModuleBanner() {
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
     <style>
+
         /* Ocultar toda la interfaz de la app cuando se active la impresión */
 @media print {
     body * {
         visibility: hidden !important;
     }
     
-    #transfer-print-document, 
-    #transfer-print-document * {
+    /* Mostrar exclusivamente el documento de Factura POS si está activo */
+    #invoice-print-document:not(.hidden), 
+    #invoice-print-document:not(.hidden) * {
         visibility: visible !important;
     }
 
-    #transfer-print-document {
+    /* Mostrar exclusivamente el documento de Traslado si está activo */
+    #transfer-print-document:not(.hidden), 
+    #transfer-print-document:not(.hidden) * {
+        visibility: visible !important;
+    }
+
+    #invoice-print-document:not(.hidden) {
+        position: absolute !important;
+        left: 0 !important;
+        top: 0 !important;
+        width: 80mm !important;
+        display: block !important;
+        background: #fff !important;
+        z-index: 999999;
+    }
+
+    #transfer-print-document:not(.hidden) {
         position: absolute !important;
         left: 0 !important;
         top: 0 !important;
@@ -671,6 +688,7 @@ function resetModuleBanner() {
             }, 10000); // Cambia cada 10 segundos con fundido suave de 3.5s
         }
     });
+    
 </script>
     <!-- CONTENEDOR PRINCIPAL DEL SISTEMA POS -->
     <div id="app-container" class="flex h-screen overflow-hidden hidden">
@@ -904,12 +922,44 @@ function resetModuleBanner() {
         </table>
     </div>
 </section>
-<!-- CÓDIGO NUEVO PARA EL MÓDULO BODEGA CON TRASLADO Y DOCUMENTO IMPRIMIBLE -->
-
-<!-- CÓDIGO ACTUALIZADO: MÓDULO BODEGA + TRASLADO + COMPROBANTE DETALLADO -->
 
 <!-- VISTA BODEGA -->
 <section id="view-bodega" class="hidden space-y-4 md:space-y-6">
+    <!-- DENTRO DEL MÓDULO BODEGA (#view-bodega), PANEL DE HISTÓRICO DE TRASLADOS -->
+<div class="bg-white dark:bg-slate-900 rounded-2xl shadow-sm p-4 md:p-6 border border-slate-100 dark:border-slate-800 space-y-4 mt-6">
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 border-b dark:border-slate-800 pb-4">
+        <div>
+            <h3 class="text-base md:text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                <i class="fa-solid fa-clock-rotate-left text-emerald-600"></i> Histórico de Traslados de Bodega
+            </h3>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Consulta y filtra todos los movimientos y remisiones realizadas hacia el almacén.</p>
+        </div>
+        
+        <!-- Filtro por Número de Documento -->
+        <div class="relative w-full md:w-72">
+            <i class="fa-solid fa-filter absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+            <input type="text" id="transfer-filter-input" oninput="renderTransfersHistory()" placeholder="Filtrar por N° de Documento (Ej. TR-123456)..." class="w-full pl-10 pr-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs md:text-sm bg-slate-50 dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+        </div>
+    </div>
+
+    <!-- Tabla de Histórico de Traslados -->
+    <div class="overflow-x-auto rounded-xl border border-slate-100 dark:border-slate-800">
+        <table class="w-full text-left border-collapse min-w-[650px]">
+            <thead>
+                <tr class="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-100 dark:border-slate-800 text-slate-500 dark:text-slate-400 text-[11px] font-bold uppercase tracking-wider">
+                    <th class="p-3 md:p-4">N° Documento</th>
+                    <th class="p-3 md:p-4">Fecha y Hora</th>
+                    <th class="p-3 md:p-4">Autorizado Por</th>
+                    <th class="p-3 md:p-4">Motivo</th>
+                    <th class="p-3 md:p-4 text-center">Total Unidades</th>
+                    <th class="p-3 md:p-4 text-center">Acciones</th>
+                </tr>
+            </thead>
+            <tbody id="transfer-history-table-body" class="divide-y divide-slate-100 dark:divide-slate-800 text-xs md:text-sm"></tbody>
+        </table>
+    </div>
+</div>
+    
     <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-sm p-4 md:p-6 border border-slate-100 dark:border-slate-800 space-y-4">
         <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 border-b dark:border-slate-800 pb-4">
             <div>
@@ -959,6 +1009,9 @@ function resetModuleBanner() {
         </div>
     </div>
 </section>
+<!-- DENTRO DEL MÓDULO BODEGA (#view-bodega), AGREGAR ESTE BLOQUE DESPUÉS DE LA TABLA DE STOCK -->
+
+   
 <!-- MODAL DE TRASLADO MÚLTIPLE -->
 <div id="transfer-modal" class="fixed inset-0 bg-slate-900/60 hidden flex items-center justify-center p-4 z-50 backdrop-blur-sm">
     <div class="bg-white dark:bg-slate-900 rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[90vh] overflow-y-auto">
@@ -1046,6 +1099,160 @@ function resetModuleBanner() {
                 <i class="fa-solid fa-print"></i> Imprimir Ahora
             </button>
         </div>
+    </div>
+</div>
+<!-- ========================================== -->
+<!-- 1. DOCUMENTO IMPRIMIBLE DE FACTURA POS     -->
+<!-- ========================================== -->
+<div id="invoice-print-document" class="hidden" style="width: 80mm; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 11px; color: #0f172a; background: #ffffff; padding: 10px; box-sizing: border-box; line-height: 1.35;">
+    
+    <!-- Encabezado Corporativo Idéntico -->
+    <div style="text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 8px; margin-bottom: 10px;">
+        <h2 style="font-size: 17px; font-weight: 900; margin: 0; letter-spacing: 1px; color: #0f172a;">BRAMY PARFUMS</h2>
+        <p style="margin: 2px 0 0 0; font-size: 9px; color: #475569; text-transform: uppercase; letter-spacing: 1.2px; font-weight: 600;">EL PODER DE TU ESENCIA </p>
+        <div style="background: #0f172a; color: #ffffff; font-size: 10px; font-weight: 800; padding: 4px 0; margin-top: 7px; letter-spacing: 0.8px; text-transform: uppercase; border-radius: 3px;">
+            FACTURA DE VENTA (POS)
+        </div>
+    </div>
+
+    <!-- Metadatos de Factura -->
+    <table style="width: 100%; font-size: 10px; border-collapse: collapse; margin-bottom: 8px; background: #f8fafc; border: 1px solid #cbd5e1;">
+        <tr>
+            <td style="padding: 4px 6px; border-bottom: 1px solid #e2e8f0; color: #475569;"><strong>N° Factura:</strong></td>
+            <td id="print-inv-id" style="padding: 4px 6px; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: 800; font-family: monospace; font-size: 11px;">FAC-000000</td>
+        </tr>
+        <tr>
+            <td style="padding: 4px 6px; border-bottom: 1px solid #e2e8f0; color: #475569;"><strong>Fecha / Hora:</strong></td>
+            <td id="print-inv-date" style="padding: 4px 6px; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: 600;">--/--/---- --:--</td>
+        </tr>
+        <tr>
+            <td style="padding: 4px 6px; border-bottom: 1px solid #e2e8f0; color: #475569;"><strong>Cajero / Vendedor:</strong></td>
+            <td id="print-inv-user" style="padding: 4px 6px; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: 600;">Administrador</td>
+        </tr>
+        <tr>
+            <td style="padding: 4px 6px; color: #475569;"><strong>Cliente:</strong></td>
+            <td id="print-inv-client" style="padding: 4px 6px; text-align: right; font-weight: 600;">Cliente Ocasional</td>
+        </tr>
+    </table>
+
+    <!-- Tabla de Artículos Vendidos -->
+    <div style="margin-bottom: 8px;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 10px;">
+            <thead>
+                <tr style="border-top: 1.5px solid #0f172a; border-bottom: 1.5px solid #0f172a; background: #f1f5f9;">
+                    <th style="padding: 5px 4px; text-align: left; font-weight: 800; text-transform: uppercase; font-size: 9px;">Descripción / Artículo</th>
+                    <th style="padding: 5px 4px; text-align: center; font-weight: 800; text-transform: uppercase; font-size: 9px; width: 36px;">Cant.</th>
+                    <th style="padding: 5px 4px; text-align: right; font-weight: 800; text-transform: uppercase; font-size: 9px; width: 62px;">Subtotal</th>
+                </tr>
+            </thead>
+            <tbody id="print-inv-items-body"></tbody>
+        </table>
+    </div>
+
+    <!-- Totales de Factura POS -->
+    <div style="border-top: 1.5px solid #0f172a; border-bottom: 1.5px solid #0f172a; padding: 6px 4px; margin-bottom: 8px; background: #f8fafc;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 10px;">
+            <tr>
+                <td style="color: #475569; font-weight: 600;">Total Referencias:</td>
+                <td id="print-inv-total-refs" style="text-align: right; font-weight: 800;">0</td>
+            </tr>
+            <tr>
+                <td style="color: #475569; font-weight: 600;">Total Unidades:</td>
+                <td id="print-inv-total-units" style="text-align: right; font-weight: 800;">0 unids.</td>
+            </tr>
+            <tr>
+                <td style="color: #0f172a; font-weight: 900; padding-top: 4px; font-size: 12px; border-top: 1px dashed #cbd5e1;">TOTAL A PAGAR:</td>
+                <td id="print-inv-total-amount" style="text-align: right; font-weight: 900; padding-top: 4px; font-size: 13px; color: #0f172a; border-top: 1px dashed #cbd5e1;">$0</td>
+            </tr>
+        </table>
+    </div>
+
+    <!-- Pie de Página Factura -->
+    <div style="text-align: center; font-size: 8.5px; color: #64748b; margin-top: 14px; border-top: 1px dashed #cbd5e1; padding-top: 6px;">
+        <div style="font-weight: 700; color: #334155; margin-bottom: 2px;">¡Gracias por su compra!</div>
+        <div>Conserve este tiquete para cualquier cambio o garantía.</div>
+        <div style="font-weight: 700; color: #0f172a; margin-top: 6px;">POS Master • Sistema de Gestión Comercial</div>
+    </div>
+</div>
+
+
+<!-- ========================================== -->
+<!-- 2. DOCUMENTO IMPRIMIBLE DE TRASLADO        -->
+<!-- ========================================== -->
+<div id="transfer-print-document" class="hidden" style="width: 80mm; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 11px; color: #0f172a; background: #ffffff; padding: 10px; box-sizing: border-box; line-height: 1.35;">
+    
+    <!-- Encabezado Corporativo Idéntico -->
+    <div style="text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 8px; margin-bottom: 10px;">
+        <h2 style="font-size: 17px; font-weight: 900; margin: 0; letter-spacing: 1px; color: #0f172a;">BRAMY PARFUMS</h2>
+        <p style="margin: 2px 0 0 0; font-size: 9px; color: #475569; text-transform: uppercase; letter-spacing: 1.2px; font-weight: 600;">EL PODER DE TU ESENCIA </p>
+        <div style="background: #0f172a; color: #ffffff; font-size: 10px; font-weight: 800; padding: 4px 0; margin-top: 7px; letter-spacing: 0.8px; text-transform: uppercase; border-radius: 3px;">
+            TRASLADO DE MERCANCÍA
+        </div>
+    </div>
+
+    <!-- Metadatos de Traslado -->
+    <table style="width: 100%; font-size: 10px; border-collapse: collapse; margin-bottom: 8px; background: #f8fafc; border: 1px solid #cbd5e1;">
+        <tr>
+            <td style="padding: 4px 6px; border-bottom: 1px solid #e2e8f0; color: #475569;"><strong>N° Documento:</strong></td>
+            <td id="print-t-id" style="padding: 4px 6px; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: 800; font-family: monospace; font-size: 11px;">TR-000000</td>
+        </tr>
+        <tr>
+            <td style="padding: 4px 6px; border-bottom: 1px solid #e2e8f0; color: #475569;"><strong>Fecha / Hora:</strong></td>
+            <td id="print-t-date" style="padding: 4px 6px; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: 600;">--/--/---- --:--</td>
+        </tr>
+        <tr>
+            <td style="padding: 4px 6px; border-bottom: 1px solid #e2e8f0; color: #475569;"><strong>Autorizado / Cajero:</strong></td>
+            <td id="print-t-user" style="padding: 4px 6px; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: 600;">Administrador</td>
+        </tr>
+        <tr>
+            <td style="padding: 4px 6px; color: #475569;"><strong>Flujo Logístico:</strong></td>
+            <td style="padding: 4px 6px; text-align: right; font-weight: 600;">Bodega ➔ Almacén</td>
+        </tr>
+    </table>
+
+    <!-- Tabla de Artículos Trasladados -->
+    <div style="margin-bottom: 8px;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 10px;">
+            <thead>
+                <tr style="border-top: 1.5px solid #0f172a; border-bottom: 1.5px solid #0f172a; background: #f1f5f9;">
+                    <th style="padding: 5px 4px; text-align: left; font-weight: 800; text-transform: uppercase; font-size: 9px;">Descripción / Artículo</th>
+                    <th style="padding: 5px 4px; text-align: center; font-weight: 800; text-transform: uppercase; font-size: 9px; width: 36px;">Cant.</th>
+                    <th style="padding: 5px 4px; text-align: right; font-weight: 800; text-transform: uppercase; font-size: 9px; width: 62px;">Saldos (B/A)</th>
+                </tr>
+            </thead>
+            <tbody id="print-t-items-body"></tbody>
+        </table>
+    </div>
+
+    <!-- Totales de Traslado -->
+    <div style="border-top: 1.5px solid #0f172a; border-bottom: 1.5px solid #0f172a; padding: 6px 4px; margin-bottom: 8px; background: #f8fafc;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 10px;">
+            <tr>
+                <td style="color: #475569; font-weight: 600;">Total Referencias:</td>
+                <td id="print-t-total-refs" style="text-align: right; font-weight: 800;">0</td>
+            </tr>
+            <tr>
+                <td style="color: #475569; font-weight: 600;">Total Unidades:</td>
+                <td id="print-t-total-units" style="text-align: right; font-weight: 800;">0 unids.</td>
+            </tr>
+            <tr>
+                <td style="color: #0f172a; font-weight: 900; padding-top: 4px; font-size: 11px; border-top: 1px dashed #cbd5e1;">ESTADO DE TRASLADO:</td>
+                <td style="text-align: right; font-weight: 900; padding-top: 4px; font-size: 11px; color: #0f172a; border-top: 1px dashed #cbd5e1;">COMPLETADO</td>
+            </tr>
+        </table>
+    </div>
+
+    <!-- Observaciones / Motivo -->
+    <div style="font-size: 9.5px; margin-bottom: 10px; padding: 6px; border: 1px dashed #94a3b8; border-radius: 4px; background: #ffffff;">
+        <strong style="text-transform: uppercase; font-size: 8.5px; color: #475569; display: block; margin-bottom: 2px;">Motivo / Observación:</strong>
+        <span id="print-t-reason" style="color: #0f172a; font-weight: 500;">Reabastecimiento general de almacén</span>
+    </div>
+
+    <!-- Pie de Página Traslado -->
+    <div style="text-align: center; font-size: 8.5px; color: #64748b; margin-top: 14px; border-top: 1px dashed #cbd5e1; padding-top: 6px;">
+        <div style="font-weight: 700; color: #334155; margin-bottom: 2px;">¡Movimiento logístico registrado con éxito!</div>
+        <div>Conserve este comprobante para auditoría de inventario.</div>
+        <div style="font-weight: 700; color: #0f172a; margin-top: 6px;">POS Master • Sistema de Gestión Comercial</div>
     </div>
 </div>
 <!-- DOCUMENTO IMPRIMIBLE DE TRASLADO (DISEÑO CORPORATIVO 80MM) -->
@@ -1153,6 +1360,7 @@ function resetModuleBanner() {
 </script>
 
 <script>
+    
    let tempTransferItems = [];
 
 function openTransferModal(prodId = null) {
@@ -1259,6 +1467,16 @@ function removeTransferItem(index) {
     renderTransferItemsTable();
 }
 
+// ====================================================
+// MÓDULO BODEGA: HISTÓRICO Y GESTIÓN DE TRASLADOS 100% FUNCIONAL
+// ====================================================
+
+// Asegurar que el estado global incluya el array de traslados al iniciar
+if (!state.transfersHistory) {
+    state.transfersHistory = JSON.parse(localStorage.getItem('pos_transfers_history')) || [];
+}
+
+// 1. Función para ejecutar el traslado de stock y guardar en el histórico
 function executeStockTransferAndPrint() {
     if (!state.cashRegister.isOpen) return alert('La caja está cerrada. No se pueden realizar movimientos.');
     if (tempTransferItems.length === 0) return alert('Agrega al menos un artículo para realizar el traslado.');
@@ -1275,9 +1493,9 @@ function executeStockTransferAndPrint() {
         }
     }
 
-    // Procesar traslado y construir filas del comprobante
     let rowsHtml = '';
     let totalUnits = 0;
+    let transferredItemsSnapshot = [];
 
     tempTransferItems.forEach(item => {
         const product = state.products.find(p => p.id === item.id);
@@ -1290,6 +1508,15 @@ function executeStockTransferAndPrint() {
             product.stock = product.stockBodega + product.stockAlmacen;
 
             totalUnits += item.qty;
+
+            transferredItemsSnapshot.push({
+                id: product.id,
+                name: product.name,
+                category: product.category || 'General',
+                qty: item.qty,
+                stockBodegaAfter: product.stockBodega,
+                stockAlmacenAfter: product.stockAlmacen
+            });
 
             rowsHtml += `
                 <tr style="border-bottom: 1px dashed #cbd5e1;">
@@ -1309,11 +1536,7 @@ function executeStockTransferAndPrint() {
         }
     });
 
-    saveData();
-    refreshAllUI();
-    closeTransferModal();
-
-    // Asignar metadatos al documento imprimible
+    // Generar datos del documento
     const transferCode = `TR-${Math.floor(100000 + Math.random() * 900000)}`;
     const nowFormatted = new Date().toLocaleString('es-CO', {
         year: 'numeric', month: '2-digit', day: '2-digit',
@@ -1321,6 +1544,26 @@ function executeStockTransferAndPrint() {
     });
     const currentUser = (state.cashRegister && state.cashRegister.cashier) ? state.cashRegister.cashier : 'Administrador';
 
+    // Guardar en el Histórico Global
+    const newTransferRecord = {
+        id: transferCode,
+        date: nowFormatted,
+        user: currentUser,
+        reason: reason,
+        totalUnits: totalUnits,
+        totalRefs: tempTransferItems.length,
+        items: transferredItemsSnapshot
+    };
+
+    if (!state.transfersHistory) state.transfersHistory = [];
+    state.transfersHistory.unshift(newTransferRecord);
+
+    // Guardar en localStorage y sincronizar con Firestore
+    saveData();
+    refreshAllUI();
+    closeTransferModal();
+
+    // Asignar metadatos al documento imprimible
     document.getElementById('print-t-id').innerText = transferCode;
     document.getElementById('print-t-date').innerText = nowFormatted;
     document.getElementById('print-t-user').innerText = currentUser;
@@ -1339,6 +1582,111 @@ function executeStockTransferAndPrint() {
         alert(`¡Traslado ${transferCode} registrado e impreso con éxito!`);
         tempTransferItems = [];
     }, 150);
+}
+
+// 2. Función para renderizar y filtrar el Histórico de Traslados
+function renderTransfersHistory() {
+    const tbody = document.getElementById('transfer-history-table-body');
+    const filterInput = document.getElementById('transfer-filter-input');
+    if (!tbody) return;
+
+    if (!state.transfersHistory) {
+        state.transfersHistory = JSON.parse(localStorage.getItem('pos_transfers_history')) || [];
+    }
+
+    const filter = filterInput ? filterInput.value.toLowerCase().trim() : '';
+    tbody.innerHTML = '';
+
+    const filtered = state.transfersHistory.filter(t => 
+        t.id.toLowerCase().includes(filter) || 
+        t.date.toLowerCase().includes(filter) ||
+        (t.reason && t.reason.toLowerCase().includes(filter)) ||
+        (t.user && t.user.toLowerCase().includes(filter))
+    );
+
+    if (filtered.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-400">No se encontraron registros de traslados.</td></tr>';
+        return;
+    }
+
+    filtered.forEach(t => {
+        tbody.innerHTML += `
+            <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition border-b border-slate-100 dark:border-slate-800">
+                <td class="p-3 md:p-4 font-mono font-bold text-slate-800 dark:text-white">${t.id}</td>
+                <td class="p-3 md:p-4 text-slate-500 dark:text-slate-400 text-xs">${t.date}</td>
+                <td class="p-3 md:p-4 font-semibold text-slate-700 dark:text-slate-300">${t.user || 'Administrador'}</td>
+                <td class="p-3 md:p-4 text-slate-600 dark:text-slate-400 text-xs truncate max-w-xs">${t.reason}</td>
+                <td class="p-3 md:p-4 text-center font-bold text-emerald-600">${t.totalUnits} unids. (${t.totalRefs} refs)</td>
+                <td class="p-3 md:p-4 text-center space-x-1 flex justify-center items-center gap-1">
+                    <button onclick="reprintTransfer('${t.id}')" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl text-xs transition shadow-sm flex items-center gap-1" title="Reimprimir Comprobante">
+                        <i class="fa-solid fa-print"></i> Reimprimir
+                    </button>
+                    <button onclick="deleteTransferRecord('${t.id}')" class="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl text-xs" title="Eliminar Registro">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+}
+
+// 3. Función para reimprimir un traslado pasado desde el histórico
+function reprintTransfer(transferId) {
+    const t = state.transfersHistory.find(item => item.id === transferId);
+    if (!t) return alert('No se encontró el registro del traslado.');
+
+    let rowsHtml = '';
+    if (t.items && Array.isArray(t.items)) {
+        t.items.forEach(item => {
+            rowsHtml += `
+                <tr style="border-bottom: 1px dashed #cbd5e1;">
+                    <td style="padding: 5px 4px; vertical-align: top;">
+                        <div style="font-weight: 700; color: #0f172a; line-height: 1.2;">${item.name}</div>
+                        <div style="font-size: 8.5px; color: #64748b; margin-top: 2px;">Cat: ${item.category || 'General'}</div>
+                    </td>
+                    <td style="padding: 5px 4px; text-align: center; vertical-align: middle; font-weight: 900; font-size: 11px; color: #0f172a;">
+                        ${item.qty}
+                    </td>
+                    <td style="padding: 5px 4px; text-align: right; vertical-align: top; font-size: 8.5px; line-height: 1.25;">
+                        <div style="color: #475569;">Bod: <strong>${item.stockBodegaAfter}</strong></div>
+                        <div style="color: #0f172a;">Alm: <strong>${item.stockAlmacenAfter}</strong></div>
+                    </td>
+                </tr>
+            `;
+        });
+    }
+
+    document.getElementById('print-t-id').innerText = t.id;
+    document.getElementById('print-t-date').innerText = t.date;
+    document.getElementById('print-t-user').innerText = t.user || 'Administrador';
+    document.getElementById('print-t-items-body').innerHTML = rowsHtml;
+    document.getElementById('print-t-total-refs').innerText = t.totalRefs || (t.items ? t.items.length : 0);
+    document.getElementById('print-t-total-units').innerText = `${t.totalUnits} unids.`;
+    document.getElementById('print-t-reason').innerText = t.reason;
+
+    const printDoc = document.getElementById('transfer-print-document');
+    printDoc.classList.remove('hidden');
+
+    setTimeout(() => {
+        window.print();
+        printDoc.classList.add('hidden');
+    }, 150);
+}
+
+// 4. Función para eliminar un registro del histórico con PIN de seguridad
+function deleteTransferRecord(transferId) {
+    if (!state.cashRegister.isOpen) return alert('La caja está cerrada.');
+    const pin = prompt("Ingrese el código PIN de seguridad de 4 dígitos para eliminar este registro del histórico:");
+    if (pin === null) return;
+    if (pin.trim() !== "1234") {
+        return alert("❌ PIN incorrecto. Acceso denegado.");
+    }
+
+    if (confirm(`¿Seguro que deseas eliminar el registro ${transferId}?`)) {
+        state.transfersHistory = state.transfersHistory.filter(t => t.id !== transferId);
+        saveData();
+        renderTransfersHistory();
+    }
 }
 function intentarRenderizarBodega() {
     const productos = obtenerListaProductos();
@@ -1446,6 +1794,7 @@ function renderBodega() {
         </div>
     </div>
 </div>
+
 
     <!-- TABLA PROFESIONAL DE PERFUMES EN BODEGA (SIN ACCIONES NI CUADROS EXTRA) -->
     <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden">
@@ -2253,41 +2602,65 @@ function renderBodega() {
 
     <!-- SCRIPT DE FUNCIONALIDAD Y VALIDACIÓN DE LICENCIA -->
     <script>
-   function printThermalTicket() {
+ function printThermalTicket() {
     if (state.cart.length === 0) return alert('El carrito está vacío para imprimir tiquete.');
 
     const clientName = document.getElementById('cart-client-name').value.trim() || 'Cliente Ocasional';
-    const total = state.cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
-    const invoiceRandomNum = Math.floor(10000 + Math.random() * 90000);
-
-    document.getElementById('ticket-invoice-num').innerText = `FACTURA DE VENTA: FAC-${invoiceRandomNum}`;
-    document.getElementById('ticket-date').innerText = `Fecha: ${new Date().toLocaleString()}`;
-    document.getElementById('ticket-client').innerText = `Cliente: ${clientName}`;
-    document.getElementById('ticket-payment-method').innerText = `Terminal: POS Principal`;
+    const subtotal = state.cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+    const discount = getActiveCart().discount || 0;
+    const total = Math.max(0, subtotal - discount);
     
-    const tbody = document.getElementById('ticket-items-body');
-    tbody.innerHTML = '';
+    const invoiceRandomNum = Math.floor(100000 + Math.random() * 900000);
+    const nowFormatted = new Date().toLocaleString('es-CO', {
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', hour12: true
+    });
+    const currentUser = (state.cashRegister && state.cashRegister.cashier) ? state.cashRegister.cashier : 'Administrador';
+
+    let rowsHtml = '';
+    let totalUnits = 0;
+
     state.cart.forEach(item => {
-        tbody.innerHTML += `
-            <tr>
-                <td style="padding: 3px 0; line-height: 1.2;">
-                    <b>${item.qty}x</b> ${item.name}<br>
-                    <span style="font-size: 9px; color: #444;">P/U: $${Number(item.price).toLocaleString('es-CO')}</span>
+        const itemSubtotal = item.price * item.qty;
+        totalUnits += item.qty;
+
+        rowsHtml += `
+            <tr style="border-bottom: 1px dashed #cbd5e1;">
+                <td style="padding: 5px 4px; vertical-align: top;">
+                    <div style="font-weight: 700; color: #0f172a; line-height: 1.2;">${item.name}</div>
+                    <div style="font-size: 8.5px; color: #64748b; margin-top: 2px;">P.Unit: $${Number(item.price).toLocaleString('es-CO')}</div>
                 </td>
-                <td style="text-align: right; vertical-align: top; padding: 3px 0; font-weight: bold;">
-                    $${Number(item.price * item.qty).toLocaleString('es-CO')}
+                <td style="padding: 5px 4px; text-align: center; vertical-align: middle; font-weight: 900; font-size: 11px; color: #0f172a;">
+                    ${item.qty}
+                </td>
+                <td style="padding: 5px 4px; text-align: right; vertical-align: top; font-weight: 700; font-size: 10px; color: #0f172a;">
+                    $${Number(itemSubtotal).toLocaleString('es-CO')}
                 </td>
             </tr>
         `;
     });
 
-    document.getElementById('ticket-subtotal').innerText = formatCOP(total);
-    document.getElementById('ticket-total').innerText = formatCOP(total);
+    // Inyectar datos exclusivos en el documento de Factura POS
+    document.getElementById('print-inv-id').innerText = `FAC-${invoiceRandomNum}`;
+    document.getElementById('print-inv-date').innerText = nowFormatted;
+    document.getElementById('print-inv-user').innerText = currentUser;
+    document.getElementById('print-inv-client').innerText = clientName;
+    document.getElementById('print-inv-items-body').innerHTML = rowsHtml;
+    document.getElementById('print-inv-total-refs').innerText = state.cart.length;
+    document.getElementById('print-inv-total-units').innerText = `${totalUnits} unids.`;
+    document.getElementById('print-inv-total-amount').innerText = `$${Number(total).toLocaleString('es-CO')}`;
 
-    const ticketEl = document.getElementById('thermal-ticket');
-    ticketEl.classList.remove('hidden');
-    window.print();
-    ticketEl.classList.add('hidden');
+    // Mostrar el documento de factura y ocultar el de traslado
+    const printDoc = document.getElementById('invoice-print-document');
+    const transferDoc = document.getElementById('transfer-print-document');
+    
+    printDoc.classList.remove('hidden');
+    if (transferDoc) transferDoc.classList.add('hidden');
+
+    setTimeout(() => {
+        window.print();
+        printDoc.classList.add('hidden');
+    }, 150);
 }
         // --- CONTROL MODO OSCURO ---
         function initDarkMode() {
