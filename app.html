@@ -1477,6 +1477,7 @@ if (!state.transfersHistory) {
 }
 
 // 1. Función para ejecutar el traslado de stock y guardar en el histórico
+// 1. Función para ejecutar el traslado de stock y guardarlo ordenado en el histórico
 function executeStockTransferAndPrint() {
     if (!state.cashRegister.isOpen) return alert('La caja está cerrada. No se pueden realizar movimientos.');
     if (tempTransferItems.length === 0) return alert('Agrega al menos un artículo para realizar el traslado.');
@@ -1536,17 +1537,17 @@ function executeStockTransferAndPrint() {
         }
     });
 
-    // Generar datos del documento
     const transferCode = `TR-${Math.floor(100000 + Math.random() * 900000)}`;
-    const nowFormatted = new Date().toLocaleString('es-CO', {
+    const nowTimestamp = Date.now(); // Marca de tiempo exacta para ordenamiento milimétrico
+    const nowFormatted = new Date(nowTimestamp).toLocaleString('es-CO', {
         year: 'numeric', month: '2-digit', day: '2-digit',
-        hour: '2-digit', minute: '2-digit', hour12: true
+        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
     });
     const currentUser = (state.cashRegister && state.cashRegister.cashier) ? state.cashRegister.cashier : 'Administrador';
 
-    // Guardar en el Histórico Global
     const newTransferRecord = {
         id: transferCode,
+        timestamp: nowTimestamp, // Clave numérica para ordenar por fecha real
         date: nowFormatted,
         user: currentUser,
         reason: reason,
@@ -1556,14 +1557,25 @@ function executeStockTransferAndPrint() {
     };
 
     if (!state.transfersHistory) state.transfersHistory = [];
+    
+    // Agrega el nuevo traslado al inicio del array
     state.transfersHistory.unshift(newTransferRecord);
 
-    // Guardar en localStorage y sincronizar con Firestore
+    // ORDENAR ESTRICTAMENTE POR FECHA Y HORA DESCENDENTE (Del más reciente al más antiguo)
+    state.transfersHistory.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+    // Guardar en localStorage / Base de Datos
     saveData();
     refreshAllUI();
+    
+    // Renderizar inmediatamente la tabla del histórico en pantalla
+    if (typeof renderTransfersHistory === 'function') {
+        renderTransfersHistory();
+    }
+
     closeTransferModal();
 
-    // Asignar metadatos al documento imprimible
+    // Inyectar datos en el documento imprimible
     document.getElementById('print-t-id').innerText = transferCode;
     document.getElementById('print-t-date').innerText = nowFormatted;
     document.getElementById('print-t-user').innerText = currentUser;
@@ -1572,14 +1584,13 @@ function executeStockTransferAndPrint() {
     document.getElementById('print-t-total-units').innerText = `${totalUnits} unids.`;
     document.getElementById('print-t-reason').innerText = reason;
 
-    // Mostrar y lanzar impresión
     const printDoc = document.getElementById('transfer-print-document');
     printDoc.classList.remove('hidden');
 
     setTimeout(() => {
         window.print();
         printDoc.classList.add('hidden');
-        alert(`¡Traslado ${transferCode} registrado e impreso con éxito!`);
+        alert(`¡Traslado ${transferCode} guardado y ordenado con éxito!`);
         tempTransferItems = [];
     }, 150);
 }
@@ -2022,6 +2033,7 @@ function renderBodega() {
           <!-- VISTA 5: CUENTAS POR PAGAR & PROVEEDORES -->
 <section id="view-payables" class="hidden space-y-4 md:space-y-6">
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" id="provider-cards-grid"></div>
+    
 
     <div class="bg-white rounded-2xl shadow-sm p-4 md:p-6 flex flex-col md:flex-row justify-between items-center gap-3">
         <h2 class="text-base md:text-lg font-bold text-slate-800">Proveedores & Facturas por Pagar</h2>
@@ -3837,78 +3849,81 @@ function sendPaymentReceiptWhatsApp(client, amountPaid, previousDebt, remainingD
     window.open(url, '_blank');
 }
 function renderPOSProducts(filter = '') {
-            const grid = document.getElementById('pos-product-grid');
-            if (!grid) return;
-            grid.innerHTML = '';
-            const filtered = state.products.filter(p => p.stock > 0 && (p.name.toLowerCase().includes(filter.toLowerCase()) || (p.category && p.category.toLowerCase().includes(filter.toLowerCase()))));
-            
-            if (filtered.length === 0) {
-                grid.innerHTML = '<div class="col-span-full text-center text-slate-400 py-8 text-xs md:text-sm font-medium">No hay productos disponibles con stock.</div>';
-                return;
-            }
+    const grid = document.getElementById('pos-product-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
 
-            // Agrupar unificando variantes de nombres
-            const grouped = {};
-            const categoryDisplayNames = {};
+    // MODIFICACIÓN: Se evalúa 'stockAlmacen' en lugar de 'stock' global para verificar disponibilidad
+    const filtered = state.products.filter(p => {
+        const stockAlmacen = p.stockAlmacen !== undefined ? Number(p.stockAlmacen) || 0 : (Number(p.stock) || 0);
+        const matchesFilter = p.name.toLowerCase().includes(filter.toLowerCase()) || (p.category && p.category.toLowerCase().includes(filter.toLowerCase()));
+        return stockAlmacen > 0 && matchesFilter;
+    });
+    
+    if (filtered.length === 0) {
+        grid.innerHTML = '<div class="col-span-full text-center text-slate-400 py-8 text-xs md:text-sm font-medium">No hay productos disponibles en el almacén.</div>';
+        return;
+    }
 
-            filtered.forEach(p => {
-                const rawCat = (p.category && p.category.trim()) ? p.category.trim() : 'General';
-                const key = rawCat.toLowerCase();
+    // Agrupar unificando categorías
+    const grouped = {};
+    const categoryDisplayNames = {};
 
-                if (!grouped[key]) {
-                    grouped[key] = [];
-                    categoryDisplayNames[key] = rawCat.toUpperCase();
-                }
-                grouped[key].push(p);
-            });
+    filtered.forEach(p => {
+        const rawCat = (p.category && p.category.trim()) ? p.category.trim() : 'General';
+        const key = rawCat.toLowerCase();
 
-            const sortedKeys = Object.keys(grouped).sort((a, b) => categoryDisplayNames[a].localeCompare(categoryDisplayNames[b]));
+        if (!grouped[key]) {
+            grouped[key] = [];
+            categoryDisplayNames[key] = rawCat.toUpperCase();
+        }
+        grouped[key].push(p);
+    });
 
-            sortedKeys.forEach(key => {
-                const displayName = categoryDisplayNames[key];
+    const sortedKeys = Object.keys(grouped).sort((a, b) => categoryDisplayNames[a].localeCompare(categoryDisplayNames[b]));
 
-                grid.innerHTML += `
-                    <div class="col-span-full mt-3 mb-1 first:mt-0">
-                        <h3 class="text-xs md:text-sm font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider border-b-2 border-emerald-300 dark:border-slate-700 pb-1 flex items-center gap-1.5 bg-emerald-50/60 dark:bg-slate-800/50 px-2 py-1 rounded-lg">
-                            <i class="fa-solid fa-layer-group text-xs text-emerald-600"></i> ${displayName} (${grouped[key].length})
-                        </h3>
+    sortedKeys.forEach(key => {
+        const displayName = categoryDisplayNames[key];
+
+        grid.innerHTML += `
+            <div class="col-span-full mt-3 mb-1 first:mt-0">
+                <h3 class="text-xs md:text-sm font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider border-b-2 border-emerald-300 dark:border-slate-700 pb-1 flex items-center gap-1.5 bg-emerald-50/60 dark:bg-slate-800/50 px-2 py-1 rounded-lg">
+                    <i class="fa-solid fa-layer-group text-xs text-emerald-600"></i> ${displayName} (${grouped[key].length})
+                </h3>
+            </div>
+        `;
+
+        grouped[key].forEach(p => {
+            const stockBodega = p.stockBodega !== undefined ? Number(p.stockBodega) : 0;
+            // OBTENER ESTRICTAMENTE EL VALOR DEL ALMACÉN
+            const stockAlmacen = p.stockAlmacen !== undefined ? Number(p.stockAlmacen) : (Number(p.stock) || 0);
+
+            grid.innerHTML += `
+                <div onclick="addToCart(${p.id})" class="bg-slate-50 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 p-2.5 md:p-4 rounded-xl cursor-pointer transition flex flex-col justify-between active:scale-95">
+                    <div>
+                        <span class="text-[10px] font-semibold text-emerald-600 uppercase block">${p.category || 'General'}</span>
+                        <h4 class="font-bold text-slate-800 text-xs md:text-sm mt-0.5 line-clamp-2">${p.name}</h4>
                     </div>
-                `;
-
-                grouped[key].forEach(p => {
-                    // Obtener de forma segura los stocks de bodega y almacén
-                    const stockBodega = p.stockBodega !== undefined ? Number(p.stockBodega) : 0;
-                    const stockAlmacen = p.stockAlmacen !== undefined ? Number(p.stockAlmacen) : (p.stock || 0);
-
-                    grid.innerHTML += `
-                        <div onclick="addToCart(${p.id})" class="bg-slate-50 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 p-2.5 md:p-4 rounded-xl cursor-pointer transition flex flex-col justify-between active:scale-95">
-                            <div>
-                                <span class="text-[10px] font-semibold text-emerald-600 uppercase block">${p.category || 'General'}</span>
-                                <h4 class="font-bold text-slate-800 text-xs md:text-sm mt-0.5 line-clamp-2">${p.name}</h4>
-                            </div>
-                            <div class="mt-2 pt-1 border-t border-slate-100 space-y-1">
-                                <div class="flex justify-between items-center text-[11px]">
-                                    <span class="text-slate-500"><i class="fa-solid fa-warehouse text-amber-500"></i> Bodega:</span>
-                                    <span class="font-bold text-amber-600">${stockBodega}</span>
-                                </div>
-                                <div class="flex justify-between items-center text-[11px]">
-                                    <span class="text-slate-500"><i class="fa-solid fa-store text-blue-500"></i> Almacén:</span>
-                                    <span class="font-bold text-blue-600">${stockAlmacen}</span>
-                                </div>
-                                <div class="flex justify-between items-center pt-1 border-t border-dashed border-slate-200">
-                                    <span class="font-bold text-slate-900 text-xs md:text-sm">${formatCOP(p.price)}</span>
-                                    <span class="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">Tot: ${p.stock}</span>
-                                </div>
-                            </div>
+                    <div class="mt-2 pt-1 border-t border-slate-100 space-y-1">
+                        <div class="flex justify-between items-center text-[11px]">
+                            <span class="text-slate-500"><i class="fa-solid fa-warehouse text-amber-500"></i> Bodega:</span>
+                            <span class="font-bold text-amber-600">${stockBodega}</span>
                         </div>
-                    `;
-                });
-            });
-        }
-        function filterPOSProducts() {
-            renderPOSProducts(document.getElementById('pos-search').value);
-        }
-
+                        <div class="flex justify-between items-center text-[11px]">
+                            <span class="text-slate-500"><i class="fa-solid fa-store text-blue-500"></i> Almacén:</span>
+                            <span class="font-bold text-blue-600">${stockAlmacen}</span>
+                        </div>
+                        <div class="flex justify-between items-center pt-1 border-t border-dashed border-slate-200">
+                            <span class="font-bold text-slate-900 text-xs md:text-sm">${formatCOP(p.price)}</span>
+                            <!-- CAMBIO: Muestra el total basado exclusivamente en el almacén -->
+                            <span class="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">Tot: ${stockAlmacen}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+    });
+}
        // ==========================================
 // GESTIÓN DE MÚLTIPLES CARRITOS SIMULTÁNEOS
 // ==========================================
