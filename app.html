@@ -1773,7 +1773,129 @@ function renderBodega() {
         `;
     });
 }
+function getClientCreditSchedule(client) {
+    const today = new Date();
+    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const clientNameKey = (client.name || '').trim().toLowerCase();
 
+    const creditSales = (state.sales || []).filter(s => {
+        const sameClient = (s.clientName || '').trim().toLowerCase() === clientNameKey;
+        const isCredit = s.method === 'Crédito' || (s.method && s.method.startsWith('Crédito'));
+        const pending = s.pendingBalance !== undefined ? Number(s.pendingBalance) : Number(s.total || 0);
+        return sameClient && isCredit && pending > 0;
+    });
+
+    const invoices = creditSales.map(sale => {
+        const originalTotal = Number(sale.total || 0);
+        const pendingBalance = sale.pendingBalance !== undefined ? Number(sale.pendingBalance) : originalTotal;
+        const paidAmount = Math.max(0, originalTotal - pendingBalance);
+        const creditDays = sale.creditDays !== undefined ? Math.max(0, parseInt(sale.creditDays, 10) || 0) : 30;
+
+        let issueDate = new Date(sale.id);
+        if (isNaN(issueDate.getTime()) && sale.date) {
+            const datePart = sale.date.split(',')[0].trim();
+            const parts = datePart.includes('/') ? datePart.split('/') : datePart.split('-');
+            if (parts.length === 3) {
+                issueDate = parts[0].length === 4
+                    ? new Date(parts[0], parts[1] - 1, parts[2])
+                    : new Date(parts[2], parts[1] - 1, parts[0]);
+            }
+        }
+        if (isNaN(issueDate.getTime())) issueDate = new Date();
+
+        const issueStart = new Date(issueDate.getFullYear(), issueDate.getMonth(), issueDate.getDate());
+        const dueDate = new Date(issueStart);
+        dueDate.setDate(dueDate.getDate() + creditDays);
+
+        const diffDaysToDue = Math.round((dueDate - todayStart) / (1000 * 60 * 60 * 24));
+
+        let statusText = `Vence en ${diffDaysToDue} ${diffDaysToDue === 1 ? 'día' : 'días'}`;
+        if (diffDaysToDue < 0) {
+            const overdueDays = Math.abs(diffDaysToDue);
+            statusText = `VENCIDA hace ${overdueDays} ${overdueDays === 1 ? 'día' : 'días'}`;
+        } else if (diffDaysToDue === 0) {
+            statusText = 'VENCE HOY';
+        }
+
+        return {
+            code: `FAC-V-${sale.id.toString().slice(-5)}`,
+            issueDateStr: issueStart.toLocaleDateString('es-CO'),
+            dueDateStr: dueDate.toLocaleDateString('es-CO'),
+            dueDateObj: dueDate,
+            creditDays,
+            originalTotal,
+            paidAmount,
+            pendingBalance,
+            diffDaysToDue,
+            statusText
+        };
+    }).sort((a, b) => a.dueDateObj - b.dueDateObj);
+
+    const totalDebt = Number(client.debt || 0);
+    const invoicesPendingSum = invoices.reduce((sum, inv) => sum + inv.pendingBalance, 0);
+    const manualOrUnlinkedDebt = Math.max(0, totalDebt - invoicesPendingSum);
+    const nextDueInvoice = invoices[0] || null;
+
+    return {
+        totalDebt,
+        invoices,
+        manualOrUnlinkedDebt,
+        nextDueInvoice
+    };
+}
+
+function sendClientCreditReminderWhatsApp(clientId) {
+    const client = state.clients.find(c => c.id === clientId);
+    if (!client) return alert('Cliente no encontrado.');
+
+    const schedule = getClientCreditSchedule(client);
+    const todayFormatted = new Date().toLocaleDateString('es-CO');
+
+    let msg = `=====================================\n`;
+    msg += `     *RECORDATORIO DE CRÉDITO*\n`;
+    msg += `=====================================\n\n`;
+    msg += `👋 Hola *${client.name}*,\n`;
+    msg += `📅 *Fecha:* ${todayFormatted}\n\n`;
+
+    if (schedule.totalDebt <= 0) {
+        msg += `🎉 Tu saldo pendiente actual es *$0*. ¡Te encuentras al día!\n\n`;
+    } else {
+        msg += `💰 *Saldo Total Pendiente:* *${formatCOP(schedule.totalDebt)}*\n`;
+
+        if (schedule.nextDueInvoice) {
+            msg += `📌 *Próximo Vencimiento:* *${schedule.nextDueInvoice.dueDateStr}* (${schedule.nextDueInvoice.statusText})\n`;
+        }
+        msg += `\n`;
+
+        if (schedule.invoices.length > 0) {
+            msg += `--- *DETALLE DE CRÉDITOS Y ABONOS* ---\n`;
+            schedule.invoices.forEach((inv, idx) => {
+                msg += `*${idx + 1}. ${inv.code}* (Plazo: ${inv.creditDays} días)\n`;
+                msg += `   • Compra: ${inv.issueDateStr} | *Vence: ${inv.dueDateStr}*\n`;
+                msg += `   • Total: ${formatCOP(inv.originalTotal)} | Abonado: ${formatCOP(inv.paidAmount)}\n`;
+                msg += `   • *Saldo Pendiente:* *${formatCOP(inv.pendingBalance)}*\n`;
+                msg += `   • Estado: *${inv.statusText}*\n\n`;
+            });
+        }
+
+        if (schedule.manualOrUnlinkedDebt > 0) {
+            msg += `• *Saldo adicional / inicial:* *${formatCOP(schedule.manualOrUnlinkedDebt)}*\n\n`;
+        }
+
+        msg += `🙏 Por favor ten presente la fecha de vencimiento para programar tu abono o pago.\n\n`;
+    }
+
+    msg += `=====================================\n`;
+    msg += `_Recordatorio enviado desde POS Master_`;
+
+    const phone = client.phone ? client.phone.replace(/\D/g, '') : '';
+    const encoded = encodeURIComponent(msg);
+    const url = phone.length >= 7
+        ? `https://api.whatsapp.com/send?phone=${phone}&text=${encoded}`
+        : `https://api.whatsapp.com/send?text=${encoded}`;
+
+    window.open(url, '_blank');
+}
 
 </script>
 <!-- MODAL DE EDICIÓN DE STOCK EN BODEGA -->
@@ -2380,42 +2502,91 @@ function renderBodega() {
             </div>
         </div>
     </div>
+<!-- PANEL MODAL EXCLUSIVO PARA ABONOS DE CLIENTES -->
+<div id="payment-modal" class="fixed inset-0 bg-slate-900/50 hidden flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-100">
+        <h3 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+            <i class="fa-solid fa-hand-holding-dollar text-emerald-600"></i>
+            <span>Registrar Abono de Cliente</span>
+        </h3>
+        <input type="hidden" id="pay-cli-id">
+        <input type="hidden" id="pay-sale-id">
+        <input type="hidden" id="pay-invoice-pending" value="0">
 
-    <!-- PANEL MODAL EXCLUSIVO PARA ABONOS DE CLIENTES -->
-    <div id="payment-modal" class="fixed inset-0 bg-slate-900/50 hidden flex items-center justify-center p-4 z-50">
-        <div class="bg-white rounded-2xl max-w-md w-full p-6 space-y-4">
-            <h3 class="text-lg font-bold text-slate-800 flex items-center gap-2">
-                <i class="fa-solid fa-hand-holding-dollar text-emerald-600"></i>
-                <span>Registrar Abono de Cliente</span>
-            </h3>
-            <input type="hidden" id="pay-cli-id">
-            
-            <div class="bg-slate-50 p-3 rounded-xl border border-slate-100 space-y-1">
-                <span class="text-xs text-slate-400 font-semibold uppercase">Cliente</span>
-                <h4 id="pay-cli-name" class="font-bold text-slate-800"></h4>
-                <div class="flex justify-between items-center text-sm pt-1">
-                    <span class="text-slate-500">Deuda Actual:</span>
-                    <span id="pay-cli-debt" class="font-bold text-rose-600"></span>
-                </div>
+        <div class="bg-slate-50 p-3 rounded-xl border border-slate-100 space-y-1">
+            <span class="text-xs text-slate-400 font-semibold uppercase">Cliente / Factura</span>
+            <h4 id="pay-cli-name" class="font-bold text-slate-800"></h4>
+            <div class="flex justify-between items-center text-sm pt-1">
+                <span class="text-slate-500">Valor Factura Pendiente:</span>
+                <span id="pay-inv-pending-display" class="font-bold text-amber-600"></span>
             </div>
-
-            <div>
-                <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Monto a Abonar ($)</label>
-                <input type="number" id="pay-amount" class="w-full px-4 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-slate-800 text-lg" placeholder="0.000">
-            </div>
-
-            <div>
-                <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Cuenta Receptora (Suma al saldo)</label>
-                <select id="pay-account" class="w-full px-4 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-medium bg-slate-50"></select>
-            </div>
-
-            <div class="flex justify-end gap-2 pt-2">
-                <button onclick="closePaymentModal()" class="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl transition text-xs font-medium">Cancelar</button>
-                <button onclick="submitClientPayment()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition text-xs font-semibold">Procesar Abono</button>
+            <div class="flex justify-between items-center text-sm">
+                <span class="text-slate-500">Deuda Total Cliente:</span>
+                <span id="pay-cli-debt" class="font-bold text-rose-600"></span>
             </div>
         </div>
-    </div>
 
+        <!-- LETRERO CUANDO SE PAGA LA FACTURA COMPLETA -->
+        <div id="pay-invoice-paid-banner" class="hidden bg-emerald-100 border-2 border-emerald-500 text-emerald-900 px-4 py-3 rounded-xl flex items-center justify-center gap-2 font-extrabold text-sm uppercase tracking-wide shadow-sm">
+            <i class="fa-solid fa-circle-check text-emerald-600 text-lg"></i>
+            <span>FACTURA PAGADA</span>
+        </div>
+
+        <div>
+            <div class="flex justify-between items-center mb-1">
+                <label class="block text-xs font-semibold text-slate-500 uppercase">Monto a Abonar ($)</label>
+                <button type="button" onclick="fillFullInvoicePayment()" class="text-xs font-bold text-emerald-600 hover:underline">
+                    Pagar factura completa
+                </button>
+            </div>
+            <input type="number" id="pay-amount" oninput="checkInvoiceFullPaymentBanner()" class="w-full px-4 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-slate-800 text-lg" placeholder="0.000">
+        </div>
+
+        <div>
+            <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Cuenta Receptora (Suma al saldo)</label>
+            <select id="pay-account" class="w-full px-4 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-medium bg-slate-50"></select>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2">
+            <button onclick="closePaymentModal()" class="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl transition text-xs font-medium">Cancelar</button>
+            <button onclick="submitClientPayment()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition text-xs font-semibold">Procesar Abono</button>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL DE DETALLE DE FACTURAS A CRÉDITO POR CLIENTE -->
+<div id="client-credit-details-modal" class="fixed inset-0 bg-slate-900/50 hidden flex items-center justify-center p-4 z-50">
+    <div class="bg-white dark:bg-slate-900 rounded-2xl max-w-4xl w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-100 dark:border-slate-800">
+        <div class="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-3">
+            <div>
+                <h3 class="text-lg font-bold text-slate-800 dark:text-white">
+                    Facturas Pendientes — <span id="ccd-client-name" class="text-purple-600"></span>
+                </h3>
+                <p class="text-xs text-slate-500">Deuda total actual: <strong id="ccd-total-debt" class="text-rose-600"></strong></p>
+            </div>
+            <button onclick="document.getElementById('client-credit-details-modal').classList.add('hidden')" class="text-slate-400 hover:text-rose-500 text-lg">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <div class="overflow-x-auto border rounded-xl">
+            <table class="w-full text-left border-collapse min-w-[680px] text-xs md:text-sm">
+                <thead>
+                    <tr class="bg-slate-50 dark:bg-slate-800 border-b text-slate-500 text-xs font-bold uppercase">
+                        <th class="p-3">Factura</th>
+                        <th class="p-3">Fecha</th>
+                        <th class="p-3 text-right">Saldo Pendiente</th>
+                        <th class="p-3 text-center">Días</th>
+                        <th class="p-3 text-center">Plazo</th>
+                        <th class="p-3 text-center">Estado</th>
+                        <th class="p-3 text-right">Acción</th>
+                    </tr>
+                </thead>
+                <tbody id="ccd-invoices-body" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
     <!-- MODAL PARA HISTORIAL Y ABONOS DE CUENTAS POR PAGAR (PROVEEDORES) -->
     <div id="payable-history-modal" class="fixed inset-0 bg-slate-900/50 hidden flex items-center justify-center p-4 z-50">
         <div class="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
@@ -5541,6 +5712,7 @@ function openPayableHistoryModal(id) {
 
     function renderClients() {
     const tbody = document.getElementById('clients-table-body');
+    
     const carteraBadge = document.getElementById('clients-total-cartera-badge');
     if (!tbody) return;
     tbody.innerHTML = '';
@@ -5570,7 +5742,10 @@ function openPayableHistoryModal(id) {
                     ${debt > 0 ? `<button onclick="openPaymentModal(${c.id})" class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs transition"><i class="fa-solid fa-hand-holding-dollar mr-1"></i> Abonar</button>` : ''}
                     <button onclick="openClientModal(${c.id})" class="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs"><i class="fa-solid fa-pen"></i></button>
                     <button onclick="deleteClient(${c.id})" class="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-xs"><i class="fa-solid fa-trash"></i></button>
-                </td>
+              <button onclick="sendClientCreditReminderWhatsApp(${c.id})" class="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-lg font-bold text-xs transition" title="Enviar Recordatorio de Vencimiento y Saldo">
+        <i class="fa-solid fa-bell mr-1"></i> Recordar
+    </button>
+                    </td>
             </tr>
         `;
     });
@@ -5692,11 +5867,13 @@ function openPayableHistoryModal(id) {
         function closePaymentModal() {
             document.getElementById('payment-modal').classList.add('hidden');
         }
+// Prioriza la factura seleccionada (pay-sale-id) al registrar el abono
 function submitClientPayment() {
     if (!state.cashRegister.isOpen) return alert('La caja está cerrada. No se pueden realizar modificaciones.');
-    const clientId = parseInt(document.getElementById('pay-cli-id').value);
+    const clientId = parseInt(document.getElementById('pay-cli-id').value, 10);
+    const targetSaleId = parseInt(document.getElementById('pay-sale-id')?.value || '0', 10);
     const amount = parseFloat(document.getElementById('pay-amount').value);
-    const accountId = parseInt(document.getElementById('pay-account').value);
+    const accountId = parseInt(document.getElementById('pay-account').value, 10);
 
     if (isNaN(amount) || amount <= 0) return alert('Ingresa un monto válido para el abono.');
 
@@ -5706,60 +5883,62 @@ function submitClientPayment() {
     if (!client || !account) return alert('Cliente o cuenta inválida.');
     if (amount > client.debt) return alert('El abono no puede superar la deuda actual del cliente.');
 
-    // Guardar saldo anterior para el comprobante
     const previousDebt = client.debt;
-
-    // 1. Descontar deuda del cliente y sumar al saldo de la cuenta
     client.debt -= amount;
     account.balance += amount;
 
-    // 2. Buscar ventas pendientes a crédito de este cliente para aplicar el abono a las facturas
     let remainingPayment = amount;
-    const clientCreditSales = state.sales.filter(s => 
-        (s.clientName || '').toLowerCase() === client.name.toLowerCase() && 
-        (s.method === 'Crédito' || s.method.startsWith('Crédito'))
+    const clientCreditSales = state.sales.filter(s =>
+        (s.clientName || '').trim().toLowerCase() === client.name.trim().toLowerCase() &&
+        (s.method === 'Crédito' || (s.method && s.method.startsWith('Crédito')))
     );
+
+    if (targetSaleId) {
+        clientCreditSales.sort((a, b) => (b.id === targetSaleId ? 1 : 0) - (a.id === targetSaleId ? 1 : 0));
+    }
 
     clientCreditSales.forEach(sale => {
         if (remainingPayment <= 0) return;
 
-        const currentPending = sale.pendingBalance !== undefined ? sale.pendingBalance : sale.total;
-        
+        const currentPending = sale.pendingBalance !== undefined ? Number(sale.pendingBalance) : Number(sale.total || 0);
+        if (currentPending <= 0) return;
+
         if (currentPending <= remainingPayment) {
-            // Se paga la factura completamente
             remainingPayment -= currentPending;
             sale.pendingBalance = 0;
             sale.method = `Pagada (${account.name})`;
         } else {
-            // Abono parcial a la factura
             sale.pendingBalance = currentPending - remainingPayment;
             sale.method = `Crédito (Abonado ${formatCOP(sale.total - sale.pendingBalance)})`;
             remainingPayment = 0;
         }
     });
 
-    // 3. Registrar la entrada del abono en el Historial de Ventas / Reportes
-    const paymentRecord = {
+    const targetSale = targetSaleId ? state.sales.find(s => s.id === targetSaleId) : null;
+    const invoiceLabel = targetSale ? ` a FAC-V-${targetSale.id.toString().slice(-5)}` : '';
+
+    state.sales.unshift({
         id: Date.now(),
         date: new Date().toLocaleString(),
         clientName: client.name,
-        method: `Abono a Crédito`,
+        method: 'Abono a Crédito',
         account: account.name,
         total: amount,
-        items: [{ id: Date.now(), name: `Abono a cartera de crédito (${client.name})`, price: amount, qty: 1 }]
-    };
-    state.sales.unshift(paymentRecord);
+        items: [{ id: Date.now(), name: `Abono a cartera de crédito${invoiceLabel} (${client.name})`, price: amount, qty: 1 }]
+    });
 
     saveData();
     closePaymentModal();
     refreshAllUI();
 
-    // 4. Preguntar si se desea enviar el comprobante de abono por WhatsApp
+    if (!document.getElementById('client-credit-details-modal').classList.contains('hidden')) {
+        openClientCreditDetails(client.id);
+    }
+
     if (confirm(`¡Abono registrado con éxito por ${formatCOP(amount)}!\n\n¿Deseas enviar el comprobante de pago por WhatsApp al cliente?`)) {
         sendPaymentReceiptWhatsApp(client, amount, previousDebt, client.debt, account.name);
     }
 }
-
 // FUNCIÓN AUXILIAR PARA ARMAR Y ENVIAR EL COMPROBANTE POR WHATSAPP
 function sendPaymentReceiptWhatsApp(client, amountPaid, previousDebt, remainingDebt, accountName) {
     const today = new Date().toLocaleString();
@@ -7432,7 +7611,7 @@ function renderClientCards() {
                         </div>
                     </div>
                     <div class="space-x-1" onclick="event.stopPropagation()">
-                        ${debt > 0 ? `<button onclick="openPaymentModal(${c.id})" class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition shadow-sm">Abonar</button>` : ''}
+                      ${debt > 0 ? `<button onclick="goToBillingForClientPayment(${c.id})" class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition shadow-sm">Abonar</button>` : ''}
                     </div>
                 </div>
             </div>
@@ -7440,7 +7619,24 @@ function renderClientCards() {
     });
 }
 
-// NUEVA FUNCIÓN: ABRIR MODAL CON EL DESGLOSE DE FACTURAS PENDIENTES DEL CLIENTE
+// Abre el modal de abono prellenado con el saldo pendiente de la factura específica
+function openInvoicePaymentModal(clientId, saleId, invoiceCode, pendingAmount) {
+    const client = state.clients.find(c => c.id === clientId);
+    if (!client) return alert('Cliente no encontrado.');
+
+    const maxAmount = Math.min(Number(pendingAmount) || 0, Number(client.debt) || 0);
+    if (maxAmount <= 0) return alert('Esta factura ya no tiene saldo pendiente.');
+
+    document.getElementById('payment-modal').classList.remove('hidden');
+    document.getElementById('pay-cli-id').value = client.id;
+    document.getElementById('pay-sale-id').value = saleId;
+    document.getElementById('pay-cli-name').innerText = `${client.name} — Factura ${invoiceCode}`;
+    document.getElementById('pay-cli-debt').innerText = formatCOP(client.debt || 0);
+    document.getElementById('pay-amount').value = maxAmount;
+    document.getElementById('pay-amount').max = maxAmount;
+}
+
+// Actualiza openClientCreditDetails para incluir el botón "Abonar" en cada factura pendiente
 function openClientCreditDetails(clientId) {
     const client = state.clients.find(c => c.id === clientId);
     if (!client) return;
@@ -7451,42 +7647,38 @@ function openClientCreditDetails(clientId) {
     const tbody = document.getElementById('ccd-invoices-body');
     tbody.innerHTML = '';
 
-    // Filtrar las facturas a crédito con saldo pendiente de este cliente
     const pendingSales = state.sales.filter(s => {
         const sameClient = (s.clientName || '').trim().toLowerCase() === client.name.trim().toLowerCase();
         const isCredit = s.method === 'Crédito' || (s.method && s.method.startsWith('Crédito'));
-        const pendingBalance = s.pendingBalance !== undefined ? s.pendingBalance : s.total;
+        const pendingBalance = s.pendingBalance !== undefined ? Number(s.pendingBalance) : Number(s.total || 0);
         return sameClient && isCredit && pendingBalance > 0;
     });
 
     if (pendingSales.length === 0) {
         if ((client.debt || 0) > 0) {
-            tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-slate-500">El cliente tiene una deuda manual/inicial de <b>${formatCOP(client.debt)}</b> sin facturas detalladas en el sistema.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-slate-500">El cliente tiene una deuda manual/inicial de <b>${formatCOP(client.debt)}</b> sin facturas detalladas en el sistema.</td></tr>`;
         } else {
-            tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-emerald-600 font-semibold">🎉 Este cliente no tiene facturas pendientes de pago.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-emerald-600 font-semibold">🎉 Este cliente no tiene facturas pendientes de pago.</td></tr>`;
         }
     } else {
         const today = new Date();
 
         pendingSales.forEach(sale => {
-            const pendingBalance = sale.pendingBalance !== undefined ? sale.pendingBalance : sale.total;
+            const pendingBalance = sale.pendingBalance !== undefined ? Number(sale.pendingBalance) : Number(sale.total || 0);
             const code = `FAC-V-${sale.id.toString().slice(-5)}`;
 
-            // Calcular días transcurridos desde la fecha de venta (usando timestamp o string de fecha)
             let saleDateObj = new Date(sale.id);
             if (isNaN(saleDateObj.getTime()) && sale.date) {
                 const datePart = sale.date.split(',')[0].trim();
                 const parts = datePart.includes('/') ? datePart.split('/') : datePart.split('-');
                 if (parts.length === 3) {
-                    saleDateObj = parts[0].length === 4 
-                        ? new Date(parts[0], parts[1] - 1, parts[2]) 
+                    saleDateObj = parts[0].length === 4
+                        ? new Date(parts[0], parts[1] - 1, parts[2])
                         : new Date(parts[2], parts[1] - 1, parts[0]);
                 }
             }
             const daysElapsed = Math.max(0, Math.floor((today - saleDateObj) / (1000 * 60 * 60 * 24)));
-
-            // Plazo de crédito en días (30 días por defecto si no se ha personalizado)
-            const creditDays = sale.creditDays !== undefined ? parseInt(sale.creditDays) : 30;
+            const creditDays = sale.creditDays !== undefined ? parseInt(sale.creditDays, 10) : 30;
             const isOverdue = daysElapsed > creditDays;
 
             tbody.innerHTML += `
@@ -7504,17 +7696,23 @@ function openClientCreditDetails(clientId) {
                     </td>
                     <td class="p-3 text-center">
                         <div class="inline-flex items-center justify-center bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1">
-                            <input type="number" min="0" max="365" value="${creditDays}" 
+                            <input type="number" min="0" max="365" value="${creditDays}"
                                 onchange="updateSaleCreditDays(${sale.id}, this.value, ${client.id})"
                                 class="w-12 text-center text-xs font-bold text-slate-800 dark:text-white bg-transparent focus:outline-none">
                             <span class="text-[11px] text-slate-500 font-semibold ml-1">días</span>
                         </div>
                     </td>
                     <td class="p-3 text-center">
-                        ${isOverdue 
-                            ? `<span class="px-2 py-0.5 bg-rose-100 text-rose-700 rounded-md font-bold text-[10px]">VENCIDA</span>` 
+                        ${isOverdue
+                            ? `<span class="px-2 py-0.5 bg-rose-100 text-rose-700 rounded-md font-bold text-[10px]">VENCIDA</span>`
                             : `<span class="px-2 py-0.5 bg-amber-100 text-amber-800 rounded-md font-bold text-[10px]">AL DÍA</span>`
                         }
+                    </td>
+                    <td class="p-3 text-right">
+                        <button onclick="openInvoicePaymentModal(${client.id}, ${sale.id}, '${code}', ${pendingBalance})"
+                            class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition shadow-sm whitespace-nowrap">
+                            <i class="fa-solid fa-hand-holding-dollar mr-1"></i> Abonar
+                        </button>
                     </td>
                 </tr>
             `;
@@ -7710,6 +7908,137 @@ function updatePayableCreditDays(payableId, newDays) {
     saveData();
     renderPayables(); // Recalcula colores y estado de vencimiento al instante
 }
+function checkInvoiceFullPaymentBanner() {
+    const banner = document.getElementById('pay-invoice-paid-banner');
+    const pendingVal = parseFloat(document.getElementById('pay-invoice-pending')?.value || '0');
+    const amountVal = parseFloat(document.getElementById('pay-amount')?.value || '0');
+
+    if (!banner) return;
+
+    if (pendingVal > 0 && !isNaN(amountVal) && amountVal >= pendingVal) {
+        banner.classList.remove('hidden');
+    } else {
+        banner.classList.add('hidden');
+    }
+}
+
+function fillFullInvoicePayment() {
+    const pendingVal = parseFloat(document.getElementById('pay-invoice-pending')?.value || '0');
+    if (pendingVal > 0) {
+        document.getElementById('pay-amount').value = pendingVal;
+        checkInvoiceFullPaymentBanner();
+    }
+}
+
+function openInvoicePaymentModal(clientId, saleId, invoiceCode, pendingAmount) {
+    const client = state.clients.find(c => c.id === clientId);
+    if (!client) return alert('Cliente no encontrado.');
+
+    const maxAmount = Math.min(Number(pendingAmount) || 0, Number(client.debt) || 0);
+    if (maxAmount <= 0) return alert('Esta factura ya no tiene saldo pendiente.');
+
+    document.getElementById('payment-modal').classList.remove('hidden');
+    document.getElementById('pay-cli-id').value = client.id;
+    document.getElementById('pay-sale-id').value = saleId;
+    document.getElementById('pay-invoice-pending').value = maxAmount;
+    document.getElementById('pay-cli-name').innerText = `${client.name} — Factura ${invoiceCode}`;
+    document.getElementById('pay-inv-pending-display').innerText = formatCOP(maxAmount);
+    document.getElementById('pay-cli-debt').innerText = formatCOP(client.debt || 0);
+    document.getElementById('pay-amount').value = maxAmount;
+    document.getElementById('pay-amount').max = maxAmount;
+
+    checkInvoiceFullPaymentBanner();
+}
+
+function submitClientPayment() {
+    if (!state.cashRegister.isOpen) return alert('La caja está cerrada. No se pueden realizar modificaciones.');
+    const clientId = parseInt(document.getElementById('pay-cli-id').value, 10);
+    const targetSaleId = parseInt(document.getElementById('pay-sale-id')?.value || '0', 10);
+    const amount = parseFloat(document.getElementById('pay-amount').value);
+    const accountId = parseInt(document.getElementById('pay-account').value, 10);
+
+    if (isNaN(amount) || amount <= 0) return alert('Ingresa un monto válido para el abono.');
+
+    const client = state.clients.find(c => c.id === clientId);
+    const account = state.accounts.find(a => a.id === accountId);
+
+    if (!client || !account) return alert('Cliente o cuenta inválida.');
+    if (amount > client.debt) return alert('El abono no puede superar la deuda actual del cliente.');
+
+    const targetSale = targetSaleId ? state.sales.find(s => s.id === targetSaleId) : null;
+    const targetPendingBefore = targetSale
+        ? (targetSale.pendingBalance !== undefined ? Number(targetSale.pendingBalance) : Number(targetSale.total || 0))
+        : 0;
+    const paidSpecificInvoiceInFull = Boolean(targetSale && amount >= targetPendingBefore && targetPendingBefore > 0);
+
+    const previousDebt = client.debt;
+    client.debt -= amount;
+    account.balance += amount;
+
+    let remainingPayment = amount;
+    const clientCreditSales = state.sales.filter(s =>
+        (s.clientName || '').trim().toLowerCase() === client.name.trim().toLowerCase() &&
+        (s.method === 'Crédito' || (s.method && s.method.startsWith('Crédito')))
+    );
+
+    if (targetSaleId) {
+        clientCreditSales.sort((a, b) => (b.id === targetSaleId ? 1 : 0) - (a.id === targetSaleId ? 1 : 0));
+    }
+
+    clientCreditSales.forEach(sale => {
+        if (remainingPayment <= 0) return;
+
+        const currentPending = sale.pendingBalance !== undefined ? Number(sale.pendingBalance) : Number(sale.total || 0);
+        if (currentPending <= 0) return;
+
+        if (currentPending <= remainingPayment) {
+            remainingPayment -= currentPending;
+            sale.pendingBalance = 0;
+            sale.method = `Pagada (${account.name})`;
+        } else {
+            sale.pendingBalance = currentPending - remainingPayment;
+            sale.method = `Crédito (Abonado ${formatCOP(sale.total - sale.pendingBalance)})`;
+            remainingPayment = 0;
+        }
+    });
+
+    const invoiceLabel = targetSale ? ` a FAC-V-${targetSale.id.toString().slice(-5)}` : '';
+
+    state.sales.unshift({
+        id: Date.now(),
+        date: new Date().toLocaleString(),
+        clientName: client.name,
+        method: 'Abono a Crédito',
+        account: account.name,
+        total: amount,
+        items: [{ id: Date.now(), name: `Abono a cartera de crédito${invoiceLabel} (${client.name})`, price: amount, qty: 1 }]
+    });
+
+    saveData();
+    closePaymentModal();
+    refreshAllUI();
+
+    if (!document.getElementById('client-credit-details-modal').classList.contains('hidden')) {
+        openClientCreditDetails(client.id);
+    }
+
+    const statusMsg = paidSpecificInvoiceInFull
+        ? `\n\n✅ FACTURA PAGADA (${targetSale ? `FAC-V-${targetSale.id.toString().slice(-5)}` : 'Factura'})`
+        : '';
+
+    if (confirm(`¡Abono registrado con éxito por ${formatCOP(amount)}!${statusMsg}\n\n¿Deseas enviar el comprobante de pago por WhatsApp al cliente?`)) {
+        sendPaymentReceiptWhatsApp(client, amount, previousDebt, client.debt, account.name);
+    }
+}
+
+function updateSaleCreditDays(saleId, newDays, clientId) {
+    const sale = state.sales.find(s => s.id === saleId);
+    if (sale) {
+        sale.creditDays = newDays === '' ? 0 : Math.max(0, parseInt(newDays, 10));
+        saveData();
+        openClientCreditDetails(clientId);
+    }
+}
  </script>
  <!-- MODAL DETALLE DE FACTURAS DE CRÉDITO POR CLIENTE -->
 <div id="client-credit-details-modal" class="fixed inset-0 bg-slate-900/60 hidden flex items-center justify-center p-4 z-50 backdrop-blur-sm">
@@ -7742,6 +8071,7 @@ function updatePayableCreditDays(payableId, newDays) {
                         <th class="p-3 text-center">Días Transcurridos</th>
                         <th class="p-3 text-center">Plazo Crédito (Días)</th>
                         <th class="p-3 text-center">Estado</th>
+                        <th class="p-3 text-right">Abonar</th>
                     </tr>
                 </thead>
                 <tbody id="ccd-invoices-body" class="divide-y divide-slate-100 dark:divide-slate-800 text-xs text-slate-700 dark:text-slate-300"></tbody>
