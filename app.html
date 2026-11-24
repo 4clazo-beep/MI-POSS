@@ -2025,6 +2025,13 @@ function sendClientCreditReminderWhatsApp(clientId) {
                 <input type="number" id="cart-discount" value="0" min="0" oninput="updateCartDiscount(this.value)" 
                     class="w-28 px-2.5 py-1 text-xs border border-slate-200 dark:border-slate-700 rounded-lg text-right font-bold text-slate-800 dark:text-white bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500">
             </div>
+            <div class="flex justify-between items-center text-xs text-slate-500 dark:text-slate-400 font-medium">
+    <span class="flex items-center gap-1">
+        <i class="fa-solid fa-motorcycle text-amber-500"></i> Domicilio ($)
+    </span>
+    <input type="number" id="cart-delivery" value="0" min="0" oninput="updateCartDelivery(this.value)" 
+        class="w-28 px-2.5 py-1 text-xs border border-slate-200 dark:border-slate-700 rounded-lg text-right font-bold text-slate-800 dark:text-white bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+</div>
 
             <div class="flex justify-between items-center text-base md:text-lg font-black text-slate-900 dark:text-white pt-1 border-t border-slate-200/50 dark:border-slate-700/50">
                 <span>TOTAL FINAL</span>
@@ -2787,7 +2794,8 @@ function sendClientCreditReminderWhatsApp(clientId) {
     const clientName = document.getElementById('cart-client-name').value.trim() || 'Cliente Ocasional';
     const subtotal = state.cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
     const discount = getActiveCart().discount || 0;
-    const total = Math.max(0, subtotal - discount);
+    const delivery = Number(getActiveCart().delivery) || 0;
+const total = Math.max(0, subtotal - discount) + delivery;
     
     const invoiceRandomNum = Math.floor(100000 + Math.random() * 900000);
     const nowFormatted = new Date().toLocaleString('es-CO', {
@@ -4225,6 +4233,12 @@ function renderCart() {
     if (discountInput && document.activeElement !== discountInput) {
         discountInput.value = activeCart.discount;
     }
+    if (activeCart.delivery === undefined) activeCart.delivery = 0;
+
+const deliveryInput = document.getElementById('cart-delivery');
+if (deliveryInput && document.activeElement !== deliveryInput) {
+    deliveryInput.value = activeCart.delivery;
+}
 
     if (activeCart.items.length === 0) {
         container.innerHTML = '<p class="text-center text-slate-400 py-6 text-xs md:text-sm">Este carrito está vacío</p>';
@@ -4259,7 +4273,7 @@ function renderCart() {
     });
 
     // Calcular el total restando el descuento de manera segura
-    const total = Math.max(0, subtotal - activeCart.discount);
+    const total = Math.max(0, subtotal - activeCart.discount) + activeCart.delivery;
 
     document.getElementById('cart-subtotal').innerText = formatCOP(subtotal);
     document.getElementById('cart-total').innerText = formatCOP(total);
@@ -4333,6 +4347,9 @@ function clearCart() {
     activeCart.name = `Cliente ${multiCarts.indexOf(activeCart) + 1}`;
     renderCartTabs();
     renderCart();
+    activeCart.delivery = 0;
+const deliveryInputClear = document.getElementById('cart-delivery');
+if (deliveryInputClear) deliveryInputClear.value = 0;
 }
  // --- CORRECCIÓN ESTRICTA: SINCRONIZACIÓN ÚNICA DE STOCK ENTRE POS E INVENTARIO ---
 
@@ -4357,12 +4374,16 @@ function checkout(method) {
     const clientName = clientNameInput || 'Cliente Ocasional';
     const accountId = parseInt(document.getElementById('checkout-account').value);
     const account = state.accounts.find(a => a.id === accountId);
+    
+    
 
     if (!account && method !== 'Crédito') return alert('Selecciona una cuenta válida.');
 
     const subtotal = state.cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
     const discount = activeCart.discount || 0;
-    const total = Math.max(0, subtotal - discount);
+    const delivery = Number(activeCart.delivery) || 0;
+const total = Math.max(0, subtotal - discount) + delivery;
+    
 
     if (method === 'Crédito') {
         if (!clientNameInput || clientName === 'Cliente Ocasional') {
@@ -4401,6 +4422,7 @@ function checkout(method) {
         account: method === 'Crédito' ? 'Cartera Crédito' : account.name,
         subtotal: subtotal,
         discount: discount,
+        delivery: delivery,
         total: total,
         items: [...state.cart]
     };
@@ -4414,55 +4436,67 @@ function checkout(method) {
     refreshAllUI();
 }
 
-        // NUEVA FUNCIÓN: ENVIAR COTIZACIÓN POR WHATSAPP SIN DESCONTAR INVENTARIO
-        function sendQuotationWhatsApp() {
-            if (state.cart.length === 0) return alert('Agrega artículos al carrito para generar una cotización.');
+   function sendQuotationWhatsApp() {
+    if (state.cart.length === 0) return alert('El carrito está vacío.');
 
-            const clientName = document.getElementById('cart-client-name').value.trim() || 'Cliente';
-            let total = 0;
+    const clientName = document.getElementById('cart-client-name').value.trim() || 'Cliente Ocasional';
+    let subtotal = 0;
 
-            let msg = `📋 *COTIZACIÓN DE COMPRA*\n`;
-            msg += `👤 *Cliente:* ${clientName}\n`;
-            msg += `📅 *Fecha:* ${new Date().toLocaleDateString()}\n\n`;
-            msg += `*Detalle de Productos:*\n`;
+    let msg = `📄 *COTIZACIÓN*\n`;
+    msg += `👤 *Cliente:* ${clientName}\n`;
+    msg += `📅 *Fecha:* ${new Date().toLocaleString()}\n\n`;
+    msg += `*Detalle de Cotización:*\n`;
 
-            state.cart.forEach(item => {
-                const sub = item.price * item.qty;
-                total += sub;
-                msg += `• ${item.name} x${item.qty} = ${formatCOP(sub)}\n`;
-            });
+    state.cart.forEach(item => {
+        const sub = item.price * item.qty;
+        subtotal += sub;
+        msg += `• ${item.name} x${item.qty} = ${formatCOP(sub)}\n`;
+    });
 
-            msg += `\n💰 *TOTAL COTIZADO:* ${formatCOP(total)}\n\n`;
-            msg += `_Cotización válida por 8 días. ¡Gracias por preferirnos!_`;
+    const discount = Number(state.discount) || 0;
+    const delivery = Number(state.delivery) || 0;
+    const finalTotal = Math.max(0, subtotal - discount) + delivery;
 
-            const encoded = encodeURIComponent(msg);
-            window.open(`https://api.whatsapp.com/send?text=${encoded}`, '_blank');
-        }
+    msg += `\n`;
+    if (discount > 0) msg += `🏷️ *Descuento:* -${formatCOP(discount)}\n`;
+    if (delivery > 0) msg += `🛵 *Domicilio:* ${formatCOP(delivery)}\n`;
+    msg += `💰 *TOTAL COTIZADO:* ${formatCOP(finalTotal)}\n\n`;
+    msg += `¡Quedamos atentos a tu confirmación!`;
 
-        function sendInvoiceWhatsApp() {
-            if (state.cart.length === 0) return alert('El carrito está vacío.');
+    const encoded = encodeURIComponent(msg);
+    window.open(`https://api.whatsapp.com/send?text=${encoded}`, '_blank');
+}
 
-            const clientName = document.getElementById('cart-client-name').value.trim() || 'Cliente Ocasional';
-            let total = 0;
+       function sendInvoiceWhatsApp() {
+    if (state.cart.length === 0) return alert('El carrito está vacío.');
 
-            let msg = `🧾 *FACTURA DE VENTA*\n`;
-            msg += `👤 *Cliente:* ${clientName}\n`;
-            msg += `📅 *Fecha:* ${new Date().toLocaleString()}\n\n`;
-            msg += `*Detalle de Venta:*\n`;
+    const clientName = document.getElementById('cart-client-name').value.trim() || 'Cliente Ocasional';
+    let subtotal = 0;
 
-            state.cart.forEach(item => {
-                const sub = item.price * item.qty;
-                total += sub;
-                msg += `• ${item.name} x${item.qty} = ${formatCOP(sub)}\n`;
-            });
+    let msg = `🧾 *FACTURA DE VENTA*\n`;
+    msg += `👤 *Cliente:* ${clientName}\n`;
+    msg += `📅 *Fecha:* ${new Date().toLocaleString()}\n\n`;
+    msg += `*Detalle de Venta:*\n`;
 
-            msg += `\n💰 *TOTAL A PAGAR:* ${formatCOP(total)}\n\n`;
-            msg += `¡Gracias por tu compra!`;
+    state.cart.forEach(item => {
+        const sub = item.price * item.qty;
+        subtotal += sub;
+        msg += `• ${item.name} x${item.qty} = ${formatCOP(sub)}\n`;
+    });
 
-            const encoded = encodeURIComponent(msg);
-            window.open(`https://api.whatsapp.com/send?text=${encoded}`, '_blank');
-        }
+    const discount = Number(state.discount) || 0;
+    const delivery = Number(state.delivery) || 0;
+    const finalTotal = Math.max(0, subtotal - discount) + delivery;
 
+    msg += `\n`;
+    if (discount > 0) msg += `🏷️ *Descuento:* -${formatCOP(discount)}\n`;
+    if (delivery > 0) msg += `🛵 *Domicilio:* ${formatCOP(delivery)}\n`;
+    msg += `💰 *TOTAL A PAGAR:* ${formatCOP(finalTotal)}\n\n`;
+    msg += `¡Gracias por tu compra!`;
+
+    const encoded = encodeURIComponent(msg);
+    window.open(`https://api.whatsapp.com/send?text=${encoded}`, '_blank');
+}
       // --- INVENTARIO MEJORADO CON EDICIÓN DIRECTA DE STOCK Y PRECIO ---
 function renderInventory() {
     const tbody = document.getElementById('inventory-table-body');
@@ -8038,6 +8072,19 @@ function updateSaleCreditDays(saleId, newDays, clientId) {
         saveData();
         openClientCreditDetails(clientId);
     }
+}
+// Actualizar valor del domicilio en el carrito activo
+function updateCartDelivery(value) {
+    const activeCart = getActiveCart();
+    const parsed = parseFloat(value);
+    activeCart.delivery = (!isNaN(parsed) && parsed >= 0) ? parsed : 0;
+
+    const subtotal = activeCart.items.reduce((sum, item) => sum + (item.price * item.qty), 0);
+    const discount = Number(activeCart.discount) || 0;
+    const total = Math.max(0, subtotal - discount) + activeCart.delivery;
+
+    const totalEl = document.getElementById('cart-total');
+    if (totalEl) totalEl.innerText = formatCOP(total);
 }
  </script>
  <!-- MODAL DETALLE DE FACTURAS DE CRÉDITO POR CLIENTE -->
