@@ -67,6 +67,24 @@ function resetModuleBanner() {
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
     <style>
+        /* Estilos profesionales para tarjetas variadas de Clientes & Crédito */
+.client-card-pro {
+    transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
+}
+.client-card-pro:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 12px 24px -8px rgba(15, 23, 42, 0.14);
+}
+.client-avatar-badge {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+}
+.client-avatar-debt {
+    background: linear-gradient(135deg, #f43f5e 0%, #e11d48 100%);
+}
+body.dark-mode .client-card-executive {
+    background: linear-gradient(145deg, #1e293b 0%, #0f172a 100%) !important;
+    border-color: #334155 !important;
+}
 
         /* Ocultar toda la interfaz de la app cuando se active la impresión */
 @media print {
@@ -2213,6 +2231,24 @@ function sendClientCreditReminderWhatsApp(clientId) {
             <h3 id="clients-total-cartera-badge" class="text-lg md:text-2xl font-bold text-purple-900 mt-1">$0.000</h3>
         </div>
     </div>
+    <!-- Barra de filtro y estilo de tarjetas para Clientes & Crédito -->
+<div class="bg-white dark:bg-slate-900 p-3.5 md:p-4 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 mt-4">
+    <div class="relative flex-1 max-w-md">
+        <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+        <input type="text" id="client-card-search" oninput="renderClientCards()" placeholder="Buscar cliente por nombre o teléfono..." class="w-full pl-9 pr-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs md:text-sm bg-slate-50 dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+    </div>
+    <div class="flex items-center gap-2 flex-wrap">
+        <select id="client-card-filter" onchange="renderClientCards()" class="px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold bg-slate-50 dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+            <option value="ALL">Todos los clientes</option>
+            <option value="DEBT">Con saldo pendiente</option>
+            <option value="AL_DIA">Al día / Sin deuda</option>
+        </select>
+        <button type="button" id="btn-toggle-card-layout" onclick="toggleClientCardLayoutMode()" class="px-3 py-2 rounded-xl text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200/70 dark:border-indigo-800 transition flex items-center gap-1.5">
+            <i class="fa-solid fa-layer-group"></i>
+            <span id="label-card-layout-mode">Estilos Variados</span>
+        </button>
+    </div>
+</div>
     <!-- TARJETAS INDIVIDUALES DE CLIENTES Y DEUDA -->
     <div id="client-cards-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-4"></div>
     <!-- PANEL DE CLIENTES FRECUENTES Y DE MAYOR COMPRA -->
@@ -7608,51 +7644,191 @@ function renderProductAnalytics() {
         `;
     });
 }
-// FUNCIÓN ACTUALIZADA: RENDERIZAR TARJETAS CLICKEABLES DE CADA CLIENTE
+let clientCardVariedMode = true;
+
+function toggleClientCardLayoutMode() {
+    clientCardVariedMode = !clientCardVariedMode;
+    const label = document.getElementById('label-card-layout-mode');
+    if (label) {
+        label.innerText = clientCardVariedMode ? 'Estilos Variados' : 'Estilo Uniforme';
+    }
+    renderClientCards();
+}
+
+function getClientInitials(name = '') {
+    const parts = name.trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return 'CL';
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
 function renderClientCards() {
     const grid = document.getElementById('client-cards-grid');
     if (!grid) return;
     grid.innerHTML = '';
 
-    if (state.clients.length === 0) {
-        grid.innerHTML = '<div class="col-span-full p-4 bg-white rounded-2xl text-center text-slate-400 text-xs border">No hay clientes registrados.</div>';
+    const searchTerm = (document.getElementById('client-card-search')?.value || '').trim().toLowerCase();
+    const filterMode = document.getElementById('client-card-filter')?.value || 'ALL';
+
+    const filteredClients = (state.clients || []).filter(c => {
+        const name = (c.name || '').toLowerCase();
+        const phone = (c.phone || '').toLowerCase();
+        const debt = Number(c.debt || 0);
+
+        const matchesSearch = !searchTerm || name.includes(searchTerm) || phone.includes(searchTerm);
+        const matchesFilter =
+            filterMode === 'ALL' ||
+            (filterMode === 'DEBT' && debt > 0) ||
+            (filterMode === 'AL_DIA' && debt <= 0);
+
+        return matchesSearch && matchesFilter;
+    });
+
+    if (filteredClients.length === 0) {
+        grid.innerHTML = '<div class="col-span-full p-6 bg-white dark:bg-slate-900 rounded-2xl text-center text-slate-400 text-xs md:text-sm border border-slate-100 dark:border-slate-800">No hay clientes que coincidan con el filtro seleccionado.</div>';
         return;
     }
 
-    state.clients.forEach(c => {
-        const debt = c.debt || 0;
-        const hasDebt = debt > 0;
+    const maxDebt = Math.max(1, ...filteredClients.map(c => Number(c.debt || 0)));
 
-        grid.innerHTML += `
-            <div onclick="openClientCreditDetails(${c.id})" title="Haz clic para ver el desglose de facturas pendientes" class="cursor-pointer bg-white dark:bg-slate-800 p-4 rounded-2xl shadow-sm border ${hasDebt ? 'border-l-4 border-l-rose-500 border-slate-100 dark:border-slate-700' : 'border-l-4 border-l-emerald-500 border-slate-100 dark:border-slate-700'} flex flex-col justify-between transition hover:shadow-md hover:scale-[1.01] active:scale-95">
-                <div class="flex justify-between items-start">
-                    <div>
-                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-                            Cliente de Crédito <i class="fa-solid fa-arrow-up-right-from-square text-[9px] text-purple-500"></i>
-                        </span>
-                        <h3 class="font-bold text-slate-800 dark:text-slate-100 text-base mt-0.5">${c.name}</h3>
-                        <p class="text-xs text-slate-400 mt-0.5"><i class="fa-solid fa-phone mr-1"></i> ${c.phone || 'Sin teléfono'}</p>
-                    </div>
-                    <div class="w-9 h-9 rounded-xl ${hasDebt ? 'bg-rose-50 text-rose-600 dark:bg-slate-700 dark:text-rose-400' : 'bg-emerald-50 text-emerald-600 dark:bg-slate-700 dark:text-emerald-400'} flex items-center justify-center text-sm shadow-sm">
-                        <i class="fa-solid fa-user"></i>
-                    </div>
-                </div>
-                <div class="mt-4 border-t border-slate-100 dark:border-slate-700 pt-3 flex justify-between items-end">
-                    <div>
-                        <span class="text-[10px] text-slate-400 uppercase font-semibold">Deuda Actual</span>
-                        <div class="text-base md:text-lg font-bold ${hasDebt ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}">
-                            ${formatCOP(debt)}
-                        </div>
-                    </div>
-                    <div class="space-x-1" onclick="event.stopPropagation()">
-                      ${debt > 0 ? `<button onclick="goToBillingForClientPayment(${c.id})" class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition shadow-sm">Abonar</button>` : ''}
-                    </div>
-                </div>
+    filteredClients.forEach((c, index) => {
+        const debt = Number(c.debt || 0);
+        const hasDebt = debt > 0;
+        const initials = getClientInitials(c.name);
+        const schedule = typeof getClientCreditSchedule === 'function' ? getClientCreditSchedule(c) : { invoices: [], nextDueInvoice: null };
+        const invoiceCount = schedule.invoices ? schedule.invoices.length : 0;
+        const debtRatio = hasDebt ? Math.min(100, Math.max(14, Math.round((debt / maxDebt) * 100))) : 0;
+
+        const variant = clientCardVariedMode ? (index % 3) : 1;
+
+        const actionButtonsHtml = `
+            <div class="flex items-center gap-1.5 flex-wrap" onclick="event.stopPropagation()">
+                ${hasDebt ? `
+                    <button type="button" onclick="openPaymentModal(${c.id})" class="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-sm flex items-center gap-1">
+                        <i class="fa-solid fa-hand-holding-dollar"></i> Abonar
+                    </button>
+                    <button type="button" onclick="sendClientCreditReminderWhatsApp(${c.id})" class="px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-xl text-xs font-bold transition flex items-center gap-1" title="Recordatorio de vencimiento">
+                        <i class="fa-solid fa-bell"></i>
+                    </button>
+                ` : ''}
+                <button type="button" onclick="sendClientDebtWhatsApp(${c.id})" class="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/80 rounded-xl text-xs font-bold transition" title="Estado de cuenta WhatsApp">
+                    <i class="fa-brands fa-whatsapp text-sm"></i>
+                </button>
+                <button type="button" onclick="openClientCreditDetails(${c.id})" class="p-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200/80 rounded-xl text-xs font-bold transition" title="Ver facturas pendientes">
+                    <i class="fa-solid fa-file-invoice"></i>
+                </button>
             </div>
         `;
+
+        // VARIANTE 0: Estilo Tarjeta Ejecutiva Oscura / Contraste Alto
+        if (variant === 0) {
+            grid.innerHTML += `
+                <div onclick="openClientCreditDetails(${c.id})" class="client-card-pro client-card-executive cursor-pointer bg-slate-900 text-white p-4 md:p-5 rounded-2xl shadow-md border border-slate-800 flex flex-col justify-between gap-3">
+                    <div class="flex justify-between items-start gap-2">
+                        <div class="flex items-center gap-3 min-w-0">
+                            <div class="w-10 h-10 rounded-xl ${hasDebt ? 'client-avatar-debt' : 'client-avatar-badge'} text-white font-extrabold text-xs flex items-center justify-center shrink-0 shadow">
+                                ${initials}
+                            </div>
+                            <div class="min-w-0">
+                                <span class="text-[10px] font-bold uppercase tracking-wider ${hasDebt ? 'text-rose-400' : 'text-emerald-400'}">
+                                    ${hasDebt ? 'Crédito Activo' : 'Al Día'}
+                                </span>
+                                <h3 class="font-bold text-white text-sm md:text-base truncate">${c.name}</h3>
+                                <p class="text-[11px] text-slate-400 truncate"><i class="fa-solid fa-phone mr-1"></i>${c.phone || 'Sin teléfono'}</p>
+                            </div>
+                        </div>
+                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${hasDebt ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'} shrink-0">
+                            ${invoiceCount} ${invoiceCount === 1 ? 'fact.' : 'facts.'}
+                        </span>
+                    </div>
+
+                    <div class="bg-slate-800/70 rounded-xl p-3 border border-slate-700/60">
+                        <div class="flex justify-between items-baseline">
+                            <span class="text-[10px] uppercase font-semibold text-slate-400">Saldo Pendiente</span>
+                            <span class="text-base md:text-lg font-black ${hasDebt ? 'text-rose-400' : 'text-emerald-400'}">${formatCOP(debt)}</span>
+                        </div>
+                        ${hasDebt ? `
+                            <div class="w-full h-1.5 bg-slate-700 rounded-full overflow-hidden mt-2">
+                                <div class="h-full bg-gradient-to-r from-amber-400 to-rose-500 rounded-full" style="width: ${debtRatio}%"></div>
+                            </div>
+                        ` : ''}
+                    </div>
+
+                    <div class="flex justify-between items-center pt-1">
+                        <span class="text-[11px] text-slate-400 truncate">
+                            ${schedule.nextDueInvoice ? `<i class="fa-regular fa-clock mr-1 text-amber-400"></i>${schedule.nextDueInvoice.statusText}` : 'Sin vencimientos'}
+                        </span>
+                        ${actionButtonsHtml}
+                    </div>
+                </div>
+            `;
+        }
+        // VARIANTE 1: Estilo Tarjeta Financiera con Banda Lateral y Badges
+        else if (variant === 1) {
+            grid.innerHTML += `
+                <div onclick="openClientCreditDetails(${c.id})" class="client-card-pro cursor-pointer bg-white dark:bg-slate-900 p-4 md:p-5 rounded-2xl shadow-sm border ${hasDebt ? 'border-l-4 border-l-rose-500 border-slate-100 dark:border-slate-800' : 'border-l-4 border-l-emerald-500 border-slate-100 dark:border-slate-800'} flex flex-col justify-between gap-3">
+                    <div class="flex justify-between items-start gap-2">
+                        <div class="min-w-0">
+                            <span class="text-[10px] font-extrabold uppercase tracking-wider text-purple-600 dark:text-purple-400 flex items-center gap-1">
+                                Perfil de Cartera <i class="fa-solid fa-arrow-up-right-from-square text-[9px]"></i>
+                            </span>
+                            <h3 class="font-bold text-slate-800 dark:text-white text-sm md:text-base mt-0.5 truncate">${c.name}</h3>
+                            <p class="text-xs text-slate-400 mt-0.5"><i class="fa-solid fa-phone mr-1"></i>${c.phone || 'Sin teléfono'}</p>
+                        </div>
+                        <div class="w-10 h-10 rounded-2xl ${hasDebt ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400' : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400'} flex items-center justify-center font-extrabold text-xs shrink-0">
+                            ${initials}
+                        </div>
+                    </div>
+
+                    <div class="pt-2 border-t border-slate-100 dark:border-slate-800 flex justify-between items-end gap-2">
+                        <div>
+                            <span class="text-[10px] text-slate-400 uppercase font-semibold block">Deuda Acumulada</span>
+                            <span class="text-base md:text-lg font-extrabold ${hasDebt ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}">${formatCOP(debt)}</span>
+                        </div>
+                        ${actionButtonsHtml}
+                    </div>
+                </div>
+            `;
+        }
+        // VARIANTE 2: Estilo Tarjeta Suave con Encabezado Tintado y Métricas
+        else {
+            grid.innerHTML += `
+                <div onclick="openClientCreditDetails(${c.id})" class="client-card-pro cursor-pointer bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200/80 dark:border-slate-800 overflow-hidden flex flex-col justify-between">
+                    <div class="${hasDebt ? 'bg-rose-50/80 dark:bg-rose-950/30 border-b border-rose-100 dark:border-rose-900/40' : 'bg-emerald-50/80 dark:bg-emerald-950/30 border-b border-emerald-100 dark:border-emerald-900/40'} px-4 py-3 flex justify-between items-center">
+                        <div class="flex items-center gap-2.5 min-w-0">
+                            <div class="w-8 h-8 rounded-full ${hasDebt ? 'client-avatar-debt' : 'client-avatar-badge'} text-white text-[11px] font-bold flex items-center justify-center shrink-0">
+                                ${initials}
+                            </div>
+                            <div class="min-w-0">
+                                <h3 class="font-bold text-slate-800 dark:text-white text-sm truncate">${c.name}</h3>
+                                <span class="text-[11px] text-slate-500 dark:text-slate-400 block truncate">${c.phone || 'Sin teléfono'}</span>
+                            </div>
+                        </div>
+                        <span class="text-[10px] font-extrabold px-2 py-0.5 rounded-md ${hasDebt ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-300'} shrink-0">
+                            ${hasDebt ? 'POR COBRAR' : 'PAZ Y SALVO'}
+                        </span>
+                    </div>
+
+                    <div class="p-4 flex flex-col justify-between flex-1 gap-3">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <span class="text-[10px] uppercase font-bold text-slate-400 block">Saldo Actual</span>
+                                <span class="text-lg font-black ${hasDebt ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}">${formatCOP(debt)}</span>
+                            </div>
+                            <span class="text-[11px] font-semibold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg">
+                                ${invoiceCount} ${invoiceCount === 1 ? 'crédito' : 'créditos'}
+                            </span>
+                        </div>
+
+                        <div class="flex justify-end pt-1 border-t border-slate-100 dark:border-slate-800">
+                            ${actionButtonsHtml}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
     });
 }
-
 // Abre el modal de abono prellenado con el saldo pendiente de la factura específica
 function openInvoicePaymentModal(clientId, saleId, invoiceCode, pendingAmount) {
     const client = state.clients.find(c => c.id === clientId);
